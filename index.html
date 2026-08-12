@@ -65,6 +65,17 @@ textarea{min-height:56px;resize:vertical}
   padding:6px 11px;font-size:12.5px;font-weight:600;margin:0 5px 5px 0;cursor:pointer;white-space:nowrap}
 .pill.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 
+.kirchip{flex:1;text-align:left;background:var(--card2);border:1px solid var(--line);color:var(--tx);
+  border-radius:11px;padding:9px 11px;font-size:13.5px;font-weight:600;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kirchip.on{background:rgba(15,118,110,.12);border-color:var(--acc);color:var(--acc)}
+:root.dark .kirchip.on{background:rgba(20,184,166,.16)}
+.kirrow{display:flex;gap:8px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.kirrow:last-child{border-bottom:0}
+.kirrow .g{flex:1;min-width:0}
+.kirrow .n{font-weight:600;font-size:14px}
+.kirrow .m{font-size:11.5px;color:var(--tx2)}
+
 .thumbs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1}
 .thumbs img{width:40px;height:40px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer}
 .thumbs .ph{font-size:11.5px;color:var(--tx2)}
@@ -143,7 +154,8 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 <body>
 
 <header>
-  <span class="brand">📦 Log Penerimaan</span>
+  <button class="ico hide" id="btnBack" onclick="goBack()" title="Kembali">←</button>
+  <span class="brand" id="brandTxt">📦 Log Penerimaan</span>
   <span class="sp"></span>
   <span class="chipu" id="chipUser" onclick="logout()" title="Ganti PIC">👤 —</span>
   <button class="ico" id="btnReload" onclick="reloadAll()" title="Muat ulang">↻</button>
@@ -178,16 +190,42 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   </div>
 </div>
 
-<!-- ============ BUAT KOLI ============ -->
+<!-- ============ DAFTAR SESI KIRIMAN ============ -->
+<div class="wrap hide" id="scSesi">
+  <div class="card">
+    <div class="row">
+      <input type="search" id="sQ" placeholder="🔍 Cari vendor / no surat jalan" oninput="renderSesi()">
+      <button class="btn sec sm" onclick="loadKiriman(function(){renderSesi();toast('Diperbarui');})">↻</button>
+    </div>
+    <div id="sDay" style="margin-top:7px"></div>
+  </div>
+  <div class="card">
+    <h2>📦 Sesi kiriman <span class="muted" id="sCount"></span></h2>
+    <div id="sList"></div>
+  </div>
+</div>
+
+<!-- ============ ISI SATU SESI: DAFTAR KOLI ============ -->
+<div class="wrap hide" id="scKoli">
+  <div class="card" id="sesiHead"></div>
+  <div class="card">
+    <h2>📥 Koli dalam sesi ini <span class="muted" id="kkCount"></span></h2>
+    <div id="kkList"></div>
+  </div>
+</div>
+
+<!-- ============ ISI KOLI (buat / edit) ============ -->
 <div class="wrap hide" id="scBuat">
   <div class="card">
     <div class="row">
-      <input type="date" id="dTgl" onchange="draftSave()" style="flex:0 0 128px">
-      <input type="text" id="dVendor" list="vendorList" placeholder="Vendor" autocomplete="off" oninput="draftSave()" style="flex:1">
-      <datalist id="vendorList"></datalist>
-      <button class="lnk" onclick="toggleNote()" id="noteBtn" title="Catatan">📝</button>
+      <div style="flex:1;min-width:0">
+        <div id="edTitle" style="font-weight:700;font-size:15px">Koli baru</div>
+        <div class="muted" id="kirInfo"></div>
+      </div>
+      <button class="lnk" onclick="toggleNote()" id="noteBtn" title="Catatan koli">📝</button>
     </div>
-    <input type="text" id="dNote" class="hide" placeholder="No. surat jalan / keterangan" oninput="draftSave()" style="margin-top:6px">
+    <input type="hidden" id="dTgl">
+    <input type="text" id="dNote" class="hide" placeholder="Catatan koli (mis. kardus penyok)" oninput="draftSave()" style="margin-top:6px">
     <div class="row" style="margin-top:6px">
       <label class="btn sec sm" style="flex:none;cursor:pointer">📷 Foto
         <input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addPhotos(this)">
@@ -239,16 +277,22 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 
 <!-- ============ BAR BAWAH: AKSI + TAB ============ -->
 <div class="bottom hide" id="bottomBar">
-  <div class="actbar" id="actBuat">
+  <div class="actbar hide" id="actSesi">
+    <button class="btn" onclick="openKiriman()">➕ Sesi kiriman baru</button>
+  </div>
+  <div class="actbar hide" id="actKoli">
+    <button class="btn" onclick="newKoli()">➕ Buat koli baru</button>
+  </div>
+  <div class="actbar hide" id="actBuat">
     <div class="asum"><b id="stSku">0</b> SKU · <b id="stQty">0</b> qty</div>
-    <button class="btn" id="btnSubmit" onclick="submitKoli()">✅ Submit Koli</button>
+    <button class="btn" id="btnSubmit" onclick="submitKoli()">✅ Simpan Koli</button>
   </div>
   <div class="actbar hide" id="actRiw">
     <button class="btn" id="btnPrint" onclick="printSelected()">🖨️ Cetak Label</button>
   </div>
   <div class="tabs">
-    <div class="tab on" id="tabBuat" onclick="show('buat')"><b>📥</b>Buat Koli</div>
-    <div class="tab" id="tabRiwayat" onclick="show('riwayat')"><b>🖨️</b>Riwayat &amp; Label</div>
+    <div class="tab on" id="tabSesi" onclick="show('sesi')"><b>📦</b>Kiriman</div>
+    <div class="tab" id="tabRiwayat" onclick="show('riwayat')"><b>🖨️</b>Label</div>
   </div>
 </div>
 
@@ -319,11 +363,13 @@ var DEFAULT_PICS = [
   {nama:'Muhammad Sopian', pin:'1239'},    {nama:'Ahmad Iqbal', pin:'1240'},
   {nama:'Rifaldi Sulaeman', pin:'1241'},   {nama:'Muhamad Wira Yuda', pin:'1246'}
 ];
-var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1'};
+var KIRIMAN_WAJIB = true;  // tiap koli harus menempel ke satu kiriman (vendor + no surat jalan)
+var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1', kiriman:'tk_kiriman'};
 
 var state = {
   exec:'', user:'', pics:[], vendors:[], master:[], byBar:{}, byKode:{},
-  koli:[], items:{}, sel:{}, outUrl:'', scanner:null, pend:null, screen:'buat'
+  koli:[], items:{}, sel:{}, outUrl:'', scanner:null, pend:null, screen:'buat',
+  kirimanList:[], kiriman:null, sesiNo:'', editNo:null, editFoto:'', sDay:''
 };
 
 /* ================= UTIL ================= */
@@ -369,6 +415,7 @@ function boot(){
   if(localStorage.getItem(LS.theme)==='dark') document.documentElement.classList.add('dark');
   state.exec = localStorage.getItem(LS.exec) || DEFAULT_EXEC;
   state.user = localStorage.getItem(LS.user) || '';
+  try{ state.kiriman = JSON.parse(localStorage.getItem(LS.kiriman)||'null'); }catch(e){}
   $('dTgl').value = todayStr();
   $('fTgl').value = '';
   bindSearch();
@@ -381,7 +428,7 @@ function showSetup(){
   hideAll(); showEl('scSetup'); $('inExec').value = state.exec||'';
 }
 function hideAll(){
-  ['scSetup','scLogin','scBuat','scRiwayat','bottomBar'].forEach(hide);
+  ['scSetup','scLogin','scSesi','scKoli','scBuat','scRiwayat','bottomBar'].forEach(hide);
 }
 function toggleNote(){
   var n=$('dNote'); n.classList.toggle('hide');
@@ -412,7 +459,6 @@ function afterExec(){
   postExec({action:'meta'}).then(function(o){
     state.pics = (o.pics && o.pics.length) ? o.pics : DEFAULT_PICS;
     state.vendors = o.vendors||[];
-    fillVendorList();
     renderPicList();
   }).catch(function(e){
     if(!state.pics.length) state.pics = DEFAULT_PICS;
@@ -460,20 +506,146 @@ function logout(){
 
 function enterApp(){
   $('chipUser').textContent = '👤 '+(state.user.split(' ')[0]||state.user);
-  hideAll(); showEl('bottomBar'); show(state.screen||'buat');
-  loadKoli(false);
+  hideAll(); showEl('bottomBar'); show('sesi');
+  loadKiriman(); loadKoli(false);
 }
 
+/* Layar bertingkat: Sesi kiriman → daftar Koli → isi Koli. 'riwayat' = tab label. */
 function show(which){
   state.screen = which;
-  $('scBuat').classList.toggle('hide', which!=='buat');
-  $('scRiwayat').classList.toggle('hide', which!=='riwayat');
+  var map = {sesi:'scSesi', koli:'scKoli', buat:'scBuat', riwayat:'scRiwayat'};
+  for(var k in map) $(map[k]).classList.toggle('hide', k!==which);
+  $('actSesi').classList.toggle('hide', which!=='sesi');
+  $('actKoli').classList.toggle('hide', which!=='koli');
   $('actBuat').classList.toggle('hide', which!=='buat');
   $('actRiw').classList.toggle('hide', which!=='riwayat');
-  $('tabBuat').classList.toggle('on', which==='buat');
+  $('tabSesi').classList.toggle('on', which!=='riwayat');
   $('tabRiwayat').classList.toggle('on', which==='riwayat');
+  $('btnBack').classList.toggle('hide', which==='sesi' || which==='riwayat');
+  $('brandTxt').textContent = which==='sesi' ? '📦 Log Penerimaan'
+    : which==='koli' ? 'Sesi '+(state.kiriman? state.kiriman.vendor : '')
+    : which==='buat' ? (state.editNo? 'Edit '+state.editNo : 'Koli baru') : '🖨️ Label';
+  if(which==='sesi'){ renderSesi(); }
+  if(which==='koli'){ renderKoliList(); }
   if(which==='riwayat'){ if(!state.koli.length) loadKoli(true); else renderKoli(); }
-  else setTimeout(function(){ $('q').focus(); }, 60);
+  if(which==='buat') setTimeout(function(){ $('q').focus(); }, 60);
+}
+
+function goBack(){
+  if(state.screen==='buat'){
+    if(draft.items.length && !state.editNo && !confirm('Koli ini belum disimpan. Tinggalkan?')) return;
+    show(state.sesiNo? 'koli' : 'sesi');
+  } else show('sesi');
+}
+
+/* ---------- daftar sesi ---------- */
+function sesiStat(no){
+  var ks = state.koli.filter(function(k){ return k.kiriman===no && k.status!=='BATAL'; });
+  var qty = 0, sku = 0;
+  ks.forEach(function(k){ qty += num(k.qty); sku += num(k.sku); });
+  return {koli:ks.length, sku:sku, qty:qty};
+}
+
+function renderSesi(){
+  var q = norm($('sQ').value||''), d = state.sDay||'';
+  var list = state.kirimanList.filter(function(k){
+    if(d && k.tanggal!==d) return false;
+    if(q && norm(k.vendor+' '+k.sj+' '+k.no).indexOf(q)<0) return false;
+    return true;
+  });
+  var h = list.slice(0,200).map(function(k){
+    var s = sesiStat(k.no);
+    var badge = s.koli
+      ? '<span class="badge">'+s.koli+' koli · '+s.qty+' qty</span>'
+      : '<span class="badge void">belum ada isi</span>';
+    return '<div class="kcard" onclick="openSesiView(\''+k.no+'\')">'+
+      '<div class="b"><div class="kno">'+esc(k.vendor)+(k.sj? ' <span class="muted">· '+esc(k.sj)+'</span>':'')+badge+'</div>'+
+      '<div class="kmeta">'+esc(k.no)+' • '+dmy(k.tanggal)+(k.oleh? ' • '+esc(k.oleh):'')+'</div></div>'+
+      '<span class="muted" style="align-self:center">›</span></div>';
+  }).join('');
+  $('sList').innerHTML = h || '<div class="muted">Belum ada sesi kiriman. Tekan tombol di bawah untuk memulai.</div>';
+  $('sCount').textContent = list.length? '· '+list.length : '';
+  var days = {};
+  state.kirimanList.forEach(function(k){ if(k.tanggal) days[k.tanggal]=(days[k.tanggal]||0)+1; });
+  var dl = Object.keys(days).sort().reverse().slice(0,5);
+  $('sDay').innerHTML = '<span class="pill'+(!d?' on':'')+'" onclick="setSDay(\'\')">Semua</span>'+
+    dl.map(function(x){ return '<span class="pill'+(d===x?' on':'')+'" onclick="setSDay(\''+x+'\')">'+dmy(x)+' ('+days[x]+')</span>'; }).join('');
+}
+function setSDay(d){ state.sDay=d; renderSesi(); }
+
+/* ---------- isi satu sesi ---------- */
+function openSesiView(no){
+  var k = state.kirimanList.filter(function(x){ return x.no===no; })[0];
+  if(!k) return;
+  state.sesiNo = no; setKiriman(k);
+  show('koli');
+}
+
+function renderKoliList(){
+  var k = state.kiriman;
+  if(!k){ show('sesi'); return; }
+  var s = sesiStat(k.no);
+  $('sesiHead').innerHTML =
+    '<div class="kno">'+esc(k.vendor)+(k.sj? ' <span class="muted">· SJ '+esc(k.sj)+'</span>':'')+'</div>'+
+    '<div class="kmeta">'+esc(k.no)+' • '+dmy(k.tanggal)+'</div>'+
+    '<div class="stat" style="margin-top:8px;margin-bottom:0">'+
+      '<div><b>'+s.koli+'</b><s>koli</s></div><div><b>'+s.sku+'</b><s>baris SKU</s></div><div><b>'+s.qty+'</b><s>total qty</s></div></div>';
+  var ks = state.koli.filter(function(x){ return x.kiriman===k.no; });
+  var h = ks.map(function(x){
+    var its = state.items[x.no]||[];
+    var prev = its.slice(0,2).map(function(i){ return esc(i.nama||i.kode)+' ×'+i.qty; }).join(', ');
+    if(its.length>2) prev += ' +'+(its.length-2);
+    return '<div class="kcard'+(x.status==='BATAL'?' void':'')+'">'+
+      '<div class="b" onclick="openKoliEdit(\''+x.no+'\')">'+
+        '<div class="kno">'+esc(x.no)+' <span class="muted">'+(x.sku||its.length)+' SKU · '+(x.qty||0)+' qty</span>'+
+          (x.foto?' <span class="muted">📷</span>':'')+(x.status==='BATAL'?'<span class="badge void">BATAL</span>':'')+'</div>'+
+        '<div class="kmeta">'+(prev||'—')+'</div>'+
+      '</div>'+
+      '<button class="qbtn" onclick="event.stopPropagation();printKoli([\''+x.no+'\'])" title="Cetak label">🖨️</button>'+
+      '<button class="qbtn" onclick="event.stopPropagation();duplicateKoli(\''+x.no+'\')" title="Duplikat">🔁</button>'+
+    '</div>';
+  }).join('');
+  $('kkList').innerHTML = h || '<div class="muted">Belum ada koli di sesi ini. Tekan “Buat koli baru”.</div>';
+  $('kkCount').textContent = ks.length? '· '+ks.length : '';
+}
+
+/* ---------- buat / edit koli ---------- */
+function newKoli(){
+  if(!state.kiriman){ show('sesi'); return; }
+  state.editNo = null; state.editFoto = '';
+  // draft yang belum sempat disimpan (app tertutup di tengah jalan) ditawarkan dulu
+  if(draft.items.length && confirm('Ada koli yang belum tersimpan ('+draft.items.length+' item). Lanjutkan yang itu?')){
+    $('dNote').value = draft.catatan||'';
+    $('dNote').classList.toggle('hide', !draft.catatan);
+    renderCart(); renderThumbs(); $('q').value=''; runSearch();
+    $('edTitle').textContent = 'Koli baru (lanjutan)';
+    $('btnSubmit').textContent = '✅ Simpan Koli';
+    show('buat'); return;
+  }
+  draft.items=[]; draft.photos=[]; draft.catatan=''; draft.cid=null;
+  draft.tanggal = state.kiriman.tanggal || todayStr();
+  $('dNote').value=''; $('dNote').classList.add('hide'); $('q').value='';
+  draftSave(); renderCart(); renderThumbs(); runSearch();
+  $('edTitle').textContent = 'Koli baru';
+  $('btnSubmit').textContent = '✅ Simpan Koli';
+  show('buat');
+}
+
+function openKoliEdit(no){
+  var k = state.koli.filter(function(x){ return x.no===no; })[0];
+  if(!k) return;
+  if(k.status==='BATAL'){ toast('Koli ini dibatalkan'); return; }
+  var its = state.items[no]||[];
+  state.editNo = no; state.editFoto = k.foto||'';
+  draft.items = its.map(function(i){ return {kode:i.kode, nama:i.nama, satuan:i.satuan, qty:num(i.qty)}; });
+  draft.photos = []; draft.catatan = k.catatan||''; draft.cid = null; draft.tanggal = k.tanggal;
+  $('dNote').value = draft.catatan;
+  $('dNote').classList.toggle('hide', !draft.catatan);
+  $('q').value='';
+  draftSave(); renderCart(); renderThumbs(); runSearch();
+  $('edTitle').textContent = 'Edit '+no;
+  $('btnSubmit').textContent = '💾 Simpan perubahan';
+  show('buat');
 }
 
 function showMenu(){
@@ -486,8 +658,8 @@ function toggleTheme(){
   localStorage.setItem(LS.theme, document.documentElement.classList.contains('dark')?'dark':'light');
 }
 function reloadAll(){
-  if(state.screen==='riwayat'){ loadKoli(true); }
-  else { loadMaster(); toast('Memuat ulang master…'); }
+  if(state.screen==='buat'){ loadMaster(); toast('Memuat ulang master…'); return; }
+  loadKiriman(); loadKoli(true);
 }
 function openSheet(){
   if(state.outUrl){ window.open(state.outUrl,'_blank'); return; }
@@ -610,8 +782,7 @@ function hl(s, toks){
 
 /* ================= FOTO ================= */
 var MAX_FOTO = 4;
-var FOTO_WAJIB = true;   // false = foto opsional lagi
-var ALASAN_CEPAT = ['Kamera HP bermasalah', 'Barang sudah terlanjur masuk gudang', 'Kondisi tidak memungkinkan', 'Foto menyusul via admin'];
+var FOTO_WAJIB = true;   // wajib mutlak: tanpa foto, koli tidak bisa disubmit (false = opsional)
 
 function addPhotos(inp){
   var files = [].slice.call(inp.files||[]);
@@ -649,47 +820,33 @@ function renderThumbs(){
   var h = draft.photos.map(function(d,i){
     return '<img src="'+d+'" onclick="delPhoto('+i+')" title="Ketuk untuk hapus">';
   }).join('');
-  if(!h){
-    h = draft.skipReason
-      ? '<span class="ph">⚠️ tanpa foto: '+esc(draft.skipReason)+' <button class="lnk" onclick="unskipFoto()">batal</button></span>'
-      : '<span class="ph">'+(FOTO_WAJIB?'wajib min. 1 foto':'opsional')+'</span>';
+  if(state.editFoto){        // foto yang sudah tersimpan di koli ini
+    h = fotoHTML(state.editFoto).replace('class="fotolink"','class="thumbs"') + h;
   }
+  if(!h) h = '<span class="ph">'+(FOTO_WAJIB?'⚠️ wajib min. 1 foto':'opsional')+'</span>';
   $('thumbs').innerHTML = h;
 }
 function delPhoto(i){
   if(!confirm('Hapus foto ini?')) return;
   draft.photos.splice(i,1); draftSave(); renderThumbs();
 }
-function unskipFoto(){ draft.skipReason=''; draftSave(); renderThumbs(); }
 
-/* dialog kalau tim menekan Submit tanpa foto */
+/* Submit ditekan tanpa foto → tidak ada jalan lain selain memotret */
 function askFoto(){
   $('detBox').innerHTML = '<div class="grab"></div>'+
-    '<h3>📷 Foto belum ada</h3>'+
-    '<div class="muted">Setiap koli wajib difoto sebelum disimpan. Kalau memang tidak memungkinkan, pilih alasannya — alasan itu tercatat di sheet.</div>'+
+    '<h3>📷 Foto wajib</h3>'+
+    '<div class="muted">Setiap koli harus ada fotonya sebelum bisa disimpan. Ambil minimal 1 foto (maks '+MAX_FOTO+').</div>'+
     '<div style="height:12px"></div>'+
     '<label class="btn" style="display:block;text-align:center;cursor:pointer">📷 Ambil foto sekarang'+
       '<input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addPhotos(this);hide(\'backDet\')">'+
     '</label>'+
-    '<div style="height:12px"></div>'+
-    '<div class="muted" style="margin-bottom:5px">Lewati dengan alasan:</div>'+
-    ALASAN_CEPAT.map(function(a){ return '<span class="pill" onclick="skipFoto(\''+a.replace(/'/g,"\\'")+'\')">'+esc(a)+'</span>'; }).join('')+
-    '<div style="height:6px"></div>'+
-    '<button class="btn sec" onclick="skipFoto(null)">Alasan lain…</button>'+
     '<div style="height:8px"></div>'+
-    '<button class="btn sec" onclick="hide(\'backDet\')">Batal</button>';
+    '<label class="btn sec" style="display:block;text-align:center;cursor:pointer">🖼️ Pilih dari galeri'+
+      '<input type="file" accept="image/*" multiple style="display:none" onchange="addPhotos(this);hide(\'backDet\')">'+
+    '</label>'+
+    '<div style="height:8px"></div>'+
+    '<button class="btn sec" onclick="hide(\'backDet\')">Kembali</button>';
   showEl('backDet');
-}
-function skipFoto(alasan){
-  if(alasan===null){
-    alasan = prompt('Alasan koli ini tidak difoto:');
-    if(alasan===null) return;
-  }
-  alasan = String(alasan||'').trim();
-  if(!alasan){ toast('Alasan tidak boleh kosong'); return; }
-  draft.skipReason = alasan + ' — ' + state.user;
-  draftSave(); renderThumbs(); hide('backDet');
-  submitKoli();
 }
 
 function fotoHTML(foto){
@@ -714,13 +871,13 @@ function loadDraft(){
   }catch(e){}
   if(!draft.tanggal) draft.tanggal = todayStr();
   if(!draft.photos) draft.photos = [];
-  $('dTgl').value = draft.tanggal; $('dVendor').value = draft.vendor||''; $('dNote').value = draft.catatan||'';
+  $('dTgl').value = draft.tanggal; $('dNote').value = draft.catatan||'';
   if(draft.catatan) $('dNote').classList.remove('hide');
   renderCart(); renderThumbs();
 }
 function draftSave(){
   draft.tanggal = $('dTgl').value || todayStr();
-  draft.vendor = $('dVendor').value.trim();
+  draft.vendor = state.kiriman ? state.kiriman.vendor : (draft.vendor||'');
   draft.catatan = $('dNote').value.trim();
   try{ localStorage.setItem(LS.draft, JSON.stringify(draft)); }
   catch(e){
@@ -733,7 +890,7 @@ function draftSave(){
 }
 function clearDraft(ask){
   if(ask && (draft.items.length||draft.photos.length) && !confirm('Kosongkan isi koli ini?')) return;
-  draft.items=[]; draft.photos=[]; draft.skipReason=''; draft.catatan=''; $('dNote').value='';
+  draft.items=[]; draft.photos=[]; draft.catatan=''; $('dNote').value='';
   draftSave(); renderCart(); renderThumbs();
 }
 
@@ -789,37 +946,49 @@ function cartDel(i){ draft.items.splice(i,1); draftSave(); renderCart(); }
 function submitKoli(){
   draftSave();
   if(!draft.items.length){ toast('Koli masih kosong'); return; }
-  if(!draft.vendor && !confirm('Vendor belum diisi. Lanjut submit?')) return;
-  // foto WAJIB terlampir sebelum submit (biar tidak ada koli yang kelewat difoto)
-  if(FOTO_WAJIB && !draft.photos.length && !draft.skipReason){ askFoto(); return; }
+  // koli harus menempel ke satu Kiriman (vendor + no surat jalan) — diisi sekali, bukan per koli
+  if(KIRIMAN_WAJIB && !state.kiriman){ toast('Pilih sesi kiriman dulu'); show('sesi'); return; }
+  // foto WAJIB — saat edit, foto lama sudah cukup
+  if(FOTO_WAJIB && !draft.photos.length && !state.editFoto){ askFoto(); return; }
+  var edit = !!state.editNo;
   var btn = $('btnSubmit');
   btn.disabled = true;
   btn.textContent = draft.photos.length ? ('Menyimpan + '+draft.photos.length+' foto…') : 'Menyimpan…';
   var payload = {
-    action:'submit', clientId: draft.cid || (draft.cid = uuid()),
-    tanggal: draft.tanggal, vendor: draft.vendor, pic: state.user, catatan: draft.catatan,
+    action: edit ? 'updatekoli' : 'submit',
+    no: state.editNo || '',
+    clientId: draft.cid || (draft.cid = uuid()),
+    tanggal: draft.tanggal, kiriman: state.kiriman? state.kiriman.no : '', pic: state.user, catatan: draft.catatan,
     photos: draft.photos.map(function(d){ return String(d).split('base64,')[1] || ''; }),
-    noPhotoReason: draft.photos.length ? '' : (draft.skipReason||''),
     items: draft.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; })
   };
   try{ localStorage.setItem(LS.draft, JSON.stringify(draft)); }catch(e){}
+  var labelBtn = edit ? '💾 Simpan perubahan' : '✅ Simpan Koli';
   postExec(payload, 3, draft.photos.length ? 120000 : 25000).then(function(o){
-    btn.disabled=false; btn.textContent='✅ Submit Koli';
+    btn.disabled=false; btn.textContent=labelBtn;
     if(!o.ok) throw new Error(o.error||'gagal');
-    var no=o.no;
-    var items = draft.items.slice();
-    var nFoto = draft.photos.length;
-    var kol = {no:no, tanggal:draft.tanggal, vendor:draft.vendor, pic:state.user, sku:items.length,
-               qty:items.reduce(function(a,b){return a+num(b.qty);},0), catatan:draft.catatan, status:'OK',
-               foto:o.foto||''};
-    state.koli.unshift(kol);
-    state.items[no] = items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; });
-    draft.cid = null; clearDraft(false);
-    if(draft.vendor && state.vendors.indexOf(draft.vendor)<0){ state.vendors.push(draft.vendor); fillVendorList(); }
-    doneDialog(kol, nFoto);
+    var no = o.no || state.editNo;
+    var items = draft.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; });
+    var qty = items.reduce(function(a,b){ return a+num(b.qty); }, 0);
+    var kol = state.koli.filter(function(x){ return x.no===no; })[0];
+    if(kol){
+      kol.sku=items.length; kol.qty=qty; kol.catatan=draft.catatan;
+      if(o.foto) kol.foto = o.foto;
+    } else {
+      kol = {no:no, tanggal:draft.tanggal, vendor:o.vendor||(state.kiriman&&state.kiriman.vendor)||'', pic:state.user,
+             sku:items.length, qty:qty, catatan:draft.catatan, status:'OK', foto:o.foto||'',
+             kiriman:o.kiriman||(state.kiriman&&state.kiriman.no)||'', sj:o.sj||(state.kiriman&&state.kiriman.sj)||''};
+      state.koli.unshift(kol);
+    }
+    state.items[no] = items;
+    draft.cid = null; state.editNo = null; state.editFoto = '';
+    clearDraft(false);
+    show('koli');
+    if(edit) toast(no+' diperbarui — '+items.length+' SKU / '+qty+' qty', 2600);
+    else doneDialog(kol, payload.photos.length);
   }).catch(function(e){
-    btn.disabled=false; btn.textContent='✅ Submit Koli';
-    alert('Gagal simpan: '+e.message+'\n\nData koli masih tersimpan di HP, coba Submit lagi.');
+    btn.disabled=false; btn.textContent=labelBtn;
+    alert('Gagal simpan: '+e.message+'\n\nData koli masih tersimpan di HP, coba simpan lagi.');
   });
 }
 
@@ -834,7 +1003,9 @@ function doneDialog(k, nFoto){
     '<div style="height:8px"></div>'+
     '<button class="btn sec" onclick="duplicateKoli(\''+k.no+'\',1)">🔁 Buat koli lagi dengan isi sama</button>'+
     '<div style="height:8px"></div>'+
-    '<button class="btn sec" onclick="hide(\'backDet\')">Buat koli berikutnya (kosong)</button>';
+    '<button class="btn sec" onclick="hide(\'backDet\');newKoli()">➕ Buat koli baru (kosong)</button>'+
+    '<div style="height:8px"></div>'+
+    '<button class="btn sec" onclick="hide(\'backDet\')">Selesai</button>';
   showEl('backDet');
 }
 
@@ -845,13 +1016,20 @@ function duplicateKoli(no, senyap){
   if(!k || !its.length){ toast('Isi koli belum termuat, tekan ↻ dulu', 2600); return; }
   if(!senyap && draft.items.length && !confirm('Koli yang sedang dibuat akan diganti dengan salinan '+no+'. Lanjut?')) return;
   draft.items = its.map(function(i){ return {kode:i.kode, nama:i.nama, satuan:i.satuan, qty:num(i.qty)}; });
-  draft.vendor = k.vendor||''; draft.catatan = k.catatan||''; draft.tanggal = todayStr();
-  draft.photos = []; draft.skipReason = ''; draft.cid = null;   // koli baru = foto baru
-  $('dTgl').value = draft.tanggal; $('dVendor').value = draft.vendor; $('dNote').value = draft.catatan;
-  if(draft.catatan) $('dNote').classList.remove('hide');
+  draft.catatan = k.catatan||''; draft.tanggal = todayStr();
+  draft.photos = []; draft.cid = null;   // koli baru = foto baru
+  state.editNo = null; state.editFoto = '';
+  if(k.kiriman && (!state.kiriman || state.kiriman.no!==k.kiriman)){
+    var kk = state.kirimanList.filter(function(x){ return x.no===k.kiriman; })[0];
+    if(kk){ state.sesiNo = kk.no; setKiriman(kk); }
+  }
+  $('dNote').value = draft.catatan;
+  $('dNote').classList.toggle('hide', !draft.catatan);
   $('q').value=''; draftSave(); renderCart(); renderThumbs(); runSearch();
+  $('edTitle').textContent = 'Koli baru (salinan '+no+')';
+  $('btnSubmit').textContent = '✅ Simpan Koli';
   hide('backDet'); show('buat');
-  toast('Disalin dari '+no+' — cek qty, lalu Submit');
+  toast('Disalin dari '+no+' — cek qty, lalu Simpan');
 }
 
 /* ================= RIWAYAT ================= */
@@ -864,13 +1042,73 @@ function loadKoli(showToast){
       state.items[no].push({kode:r[1], nama:r[2], satuan:r[3], qty:num(r[4])});
     });
     fillFilters();
-    renderKoli();
+    renderKoli(); renderKirChip();
     if(showToast) toast(state.koli.length+' koli dimuat');
   }).catch(function(e){ if(showToast) toast('Gagal memuat: '+e.message, 3200); });
 }
 
-function fillVendorList(){
-  $('vendorList').innerHTML = state.vendors.map(function(v){ return '<option value="'+esc(v)+'">'; }).join('');
+/* ================= KIRIMAN (vendor + surat jalan, diisi sekali) ================= */
+function loadKiriman(cb){
+  postExec({action:'kiriman'}, 2).then(function(o){
+    state.kirimanList = (o.kiriman||[]).slice().reverse();
+    // pulihkan pilihan terakhir (data segar dari server)
+    if(state.kiriman){
+      var k = state.kirimanList.filter(function(x){ return x.no===state.kiriman.no; })[0];
+      if(k) state.kiriman = k;
+    }
+    renderKirChip(); cb && cb();
+  }).catch(function(){ renderKirChip(); cb && cb(); });
+}
+
+function setKiriman(k){
+  state.kiriman = k;
+  try{ localStorage.setItem(LS.kiriman, JSON.stringify(k)); }catch(e){}
+  draft.vendor = k? k.vendor : '';
+  draftSave(); renderKirChip();
+}
+
+function renderKirChip(){
+  var i = $('kirInfo'), k = state.kiriman;
+  if(i) i.textContent = k ? (k.vendor+(k.sj? ' · SJ '+k.sj:'')+' · '+k.no) : '';
+  if(state.screen==='sesi') renderSesi();
+  if(state.screen==='koli') renderKoliList();
+}
+
+function openKiriman(){
+  $('detBox').innerHTML = '<div class="grab"></div>'+
+    '<h3>➕ Sesi kiriman baru</h3>'+
+    '<div class="muted">Satu kedatangan / surat jalan = satu sesi. Semua koli di dalamnya otomatis membawa vendor & no surat jalan ini.</div>'+
+    '<label class="lb">Vendor (wajib)</label>'+
+    '<input type="text" id="nkVendor" placeholder="Nama vendor" list="vendorList" autocomplete="off">'+
+    '<datalist id="vendorList">'+state.vendors.map(function(v){ return '<option value="'+esc(v)+'">'; }).join('')+'</datalist>'+
+    '<label class="lb">No. surat jalan (opsional)</label>'+
+    '<input type="text" id="nkSJ" placeholder="mis. SJ-88912" autocomplete="off">'+
+    '<div style="height:12px"></div>'+
+    '<button class="btn" id="nkBtn" onclick="createKiriman()">➕ Mulai sesi ini</button>'+
+    '<div style="height:8px"></div>'+
+    '<button class="btn sec" onclick="hide(\'backDet\')">Batal</button>';
+  showEl('backDet');
+  setTimeout(function(){ $('nkVendor').focus(); }, 80);
+}
+
+function createKiriman(){
+  var vendor = $('nkVendor').value.trim();
+  if(!vendor){ toast('Nama vendor wajib diisi'); $('nkVendor').focus(); return; }
+  var sj = $('nkSJ').value.trim();
+  var btn = $('nkBtn'); btn.disabled = true; btn.textContent = 'Membuat…';
+  postExec({action:'newkiriman', vendor:vendor, sj:sj, pic:state.user, tanggal:todayStr()}, 2, 30000)
+  .then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+    var k = {no:o.no, vendor:o.vendor, sj:o.sj, tanggal:o.tanggal, status:'AKTIF'};
+    state.kirimanList.unshift(k);
+    if(state.vendors.indexOf(vendor)<0) state.vendors.push(vendor);
+    hide('backDet');
+    openSesiView(k.no);            // langsung masuk ke sesinya
+    toast('Sesi '+o.no+' dimulai — '+vendor);
+  }).catch(function(e){
+    btn.disabled=false; btn.textContent='➕ Mulai kiriman ini';
+    alert('Gagal membuat kiriman: '+e.message);
+  });
 }
 function fillFilters(){
   var pics={}, vends={};
@@ -897,7 +1135,7 @@ function filtered(){
     if(p && k.pic!==p) return false;
     if(v && k.vendor!==v) return false;
     if(q){
-      var hay = norm(k.no+' '+k.vendor+' '+k.pic+' '+(k.catatan||''));
+      var hay = norm(k.no+' '+k.vendor+' '+k.pic+' '+(k.catatan||'')+' '+(k.sj||'')+' '+(k.kiriman||''));
       var its = state.items[k.no]||[];
       var hit = hay.indexOf(q)>=0 || its.some(function(i){ return norm(i.nama+' '+i.kode).indexOf(q)>=0; });
       if(!hit) return false;
@@ -918,7 +1156,7 @@ function renderKoli(){
           ' <span class="muted">'+(k.sku||its.length)+' SKU · '+(k.qty||0)+' qty</span>'+
           (k.foto?' <span class="muted">📷</span>':'')+
           (k.status==='BATAL'?'<span class="badge void">BATAL</span>':'')+'</div>'+
-        '<div class="kmeta">'+esc(k.vendor||'-')+' • '+dmy(k.tanggal)+' • '+esc(k.pic||'-')+'</div>'+
+        '<div class="kmeta">'+esc(k.vendor||'-')+(k.sj? ' · '+esc(k.sj):'')+' • '+dmy(k.tanggal)+' • '+esc(k.pic||'-')+'</div>'+
       '</div>'+
       '<button class="qbtn" onclick="event.stopPropagation();duplicateKoli(\''+k.no+'\')" title="Duplikat isi koli ini">🔁</button>'+
       '</div>';
@@ -961,7 +1199,9 @@ function openDetail(no){
   var rows = its.map(function(i){ return '<tr><td>'+esc(i.nama||i.kode)+'<div class="muted">'+esc(i.kode)+'</div></td><td class="q">'+i.qty+'</td></tr>'; }).join('');
   $('detBox').innerHTML = '<div class="grab"></div>'+
     '<h3>'+esc(no)+(k.status==='BATAL'?'<span class="badge void">BATAL</span>':'')+'</h3>'+
-    '<div class="muted">'+esc(k.vendor||'-')+' • '+dmy(k.tanggal)+' • PIC '+esc(k.pic||'-')+(k.catatan?'<br>'+esc(k.catatan):'')+'</div>'+
+    '<div class="muted">'+esc(k.vendor||'-')+' • '+dmy(k.tanggal)+' • PIC '+esc(k.pic||'-')+
+      (k.kiriman? '<br>Kiriman '+esc(k.kiriman)+(k.sj? ' • Surat jalan '+esc(k.sj):''):'')+
+      (k.catatan?'<br>'+esc(k.catatan):'')+'</div>'+
     fotoHTML(k.foto)+
     '<table class="dt"><thead><tr><th>SKU</th><th class="q">Qty</th></tr></thead><tbody>'+rows+'</tbody>'+
     '<tfoot><tr><th>'+its.length+' SKU</th><th class="q">'+its.reduce(function(a,b){return a+num(b.qty);},0)+'</th></tr></tfoot></table>'+
@@ -1000,7 +1240,7 @@ function labelShell(k, totSku, totQty){
   var noCls = L<=8 ? ' xl' : (L<=12 ? ' lg' : '');
   return '<div class="lhead"><div class="lg">'+
       '<div class="lno'+noCls+'">'+esc(k.no)+'</div>'+
-      '<div class="lsub">'+esc(k.vendor||'-')+'<br>'+dmy(k.tanggal)+' • PIC: '+esc(k.pic||'-')+(k.catatan?' • '+esc(k.catatan):'')+'</div>'+
+      '<div class="lsub">'+esc(k.vendor||'-')+(k.sj? ' · SJ '+esc(k.sj):'')+'<br>'+dmy(k.tanggal)+' • PIC: '+esc(k.pic||'-')+(k.catatan?' • '+esc(k.catatan):'')+'</div>'+
     '</div><div class="lqr">'+qrSvg(k.no)+'</div></div>'+
     '<table class="ltab"><thead><tr><th>NAMA SKU</th><th class="q">QTY</th></tr></thead><tbody></tbody></table>'+
     '<div class="lfoot"><span>'+totSku+' SKU • total '+totQty+'</span><span class="lpg"></span></div>';
