@@ -233,7 +233,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   </div>
   <div class="menucard" onclick="pilihModul('ambil')">
     <div class="mi">📤</div>
-    <div class="mg"><div class="mt">Scan Ambil Barang</div>
+    <div class="mg"><div class="mt">Log Book Transaksi Bulk</div>
       <div class="muted">Scan koli saat barang dibawa dari bulk ke etalase</div></div>
     <span class="muted">›</span>
   </div>
@@ -463,7 +463,7 @@ var state = {
   koli:[], items:{}, sel:{}, outUrl:'', scanner:null, pend:null, screen:'buat',
   kirimanList:[], kiriman:null, sesiNo:'', editNo:null, editFoto:'', sDay:'',
   pending:{}, tmpSeq:0,
-  modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE'
+  modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null
 };
 
 /* ================= UTIL ================= */
@@ -557,6 +557,7 @@ function afterExec(){
     state.pics = (o.pics && o.pics.length) ? o.pics : DEFAULT_PICS;
     state.vendors = o.vendors||[];
     state.outUrl = o.out||state.outUrl;
+    if(o.sheets) state.sheets = o.sheets;
     state.kirimanList = (o.kiriman||[]).slice().reverse();
     setKoliData(o);
     renderPicList();
@@ -631,7 +632,7 @@ function show(which){
     : which==='koli' ? 'Sesi '+(state.kiriman? state.kiriman.vendor : '')
     : which==='buat' ? (state.editNo? 'Edit '+state.editNo : (bulkMode? 'Koli bulk baru' : 'Koli baru'))
     : which==='bulk' ? '🏬 Gudang Bulk'
-    : which==='ambil' ? '📤 Ambil Barang' : '🖨️ Label';
+    : which==='ambil' ? '📤 Transaksi Bulk' : '🖨️ Label';
   if(which==='menu'){ renderMenu(); }
   if(which==='sesi'){ renderSesi(); }
   if(which==='koli'){ renderKoliList(); }
@@ -1004,10 +1005,17 @@ function reloadAll(){
   loadKiriman(); loadKoli(true);
 }
 function openSheet(){
-  if(state.outUrl){ window.open(state.outUrl,'_blank'); return; }
-  fetch(state.exec+'?action=config').then(function(r){return r.json();}).then(function(o){
-    state.outUrl=o.out||''; if(state.outUrl) window.open(state.outUrl,'_blank'); else toast('Sheet belum dibuat');
-  }).catch(function(){ toast('Gagal ambil link sheet'); });
+  var s = state.sheets||{};
+  hide('backMenu');
+  $('detBox').innerHTML = '<div class="grab"></div><h3>📄 Google Sheet data</h3>'+
+    '<div class="muted">Datanya dipisah per modul.</div><div style="height:10px"></div>'+
+    [['inbound','📥 Log Penerimaan (inbound)'],['bulk','🏬 Pendataan Gudang Bulk'],['trx','📤 Log Book Transaksi Bulk']]
+      .map(function(x){
+        return s[x[0]] ? '<a class="btn sec" style="display:block;text-align:center;margin-bottom:8px;text-decoration:none" target="_blank" href="'+esc(s[x[0]])+'">'+x[1]+'</a>'
+                       : '<div class="muted" style="margin-bottom:8px">'+x[1]+' — belum terbentuk</div>';
+      }).join('')+
+    '<button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+  showEl('backDet');
 }
 
 /* ================= MASTER DATA ================= */
