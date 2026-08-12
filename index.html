@@ -93,6 +93,12 @@ textarea{min-height:56px;resize:vertical}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kirchip.on{background:rgba(15,118,110,.12);border-color:var(--acc);color:var(--acc)}
 :root.dark .kirchip.on{background:rgba(20,184,166,.16)}
+.vlist{max-height:168px;overflow:auto;margin-top:6px;border:1px solid var(--line);border-radius:11px;background:var(--card2)}
+.vlist:empty{display:none}
+.vrow{padding:10px 11px;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px;font-weight:600}
+.vrow:last-child{border-bottom:0}
+.vrow:active{background:var(--card)}
+
 .kirrow{display:flex;gap:8px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);cursor:pointer}
 .kirrow:last-child{border-bottom:0}
 .kirrow .g{flex:1;min-width:0}
@@ -376,6 +382,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     <h2>🧺 Isi koli <span class="muted" id="cartCount"></span><span class="sp2"></span>
       <button class="lnk" onclick="clearDraft(true)">Kosongkan</button></h2>
     <div class="cart" id="cart"></div>
+    <div id="hapusKoliWrap" style="margin-top:8px"></div>
   </div>
 </div>
 
@@ -751,9 +758,10 @@ function renderSesi(){
     var badge = s.koli
       ? '<span class="badge">'+s.koli+' koli · '+s.qty+' qty</span>'
       : '<span class="badge void">belum ada isi</span>';
-    return '<div class="kcard" onclick="openSesiView(\''+k.no+'\')">'+
-      '<div class="b"><div class="kno">'+esc(k.vendor)+(k.sj? ' <span class="muted">· '+esc(k.sj)+'</span>':'')+badge+'</div>'+
+    return '<div class="kcard">'+
+      '<div class="b" onclick="openSesiView(\''+k.no+'\')"><div class="kno">'+esc(k.vendor)+(k.sj? ' <span class="muted">· '+esc(k.sj)+'</span>':'')+badge+'</div>'+
       '<div class="kmeta">'+esc(k.no)+' • '+dmy(k.tanggal)+(k.oleh? ' • '+esc(k.oleh):'')+'</div></div>'+
+      (s.koli? '' : '<button class="qbtn" onclick="event.stopPropagation();hapusSesi(\''+k.no+'\')" title="Hapus sesi">🗑️</button>')+
       '<span class="muted" style="align-self:center">›</span></div>';
   }).join('');
   $('sList').innerHTML = h || '<div class="muted">Belum ada sesi kiriman. Tekan tombol di bawah untuk memulai.</div>';
@@ -765,6 +773,76 @@ function renderSesi(){
     dl.map(function(x){ return '<span class="pill'+(d===x?' on':'')+'" onclick="setSDay(\''+x+'\')">'+dmy(x)+' ('+days[x]+')</span>'; }).join('');
 }
 function setSDay(d){ state.sDay=d; renderSesi(); }
+
+/* ---------- hapus (sesi / koli / item) ---------- */
+function hapusSesi(no){
+  var k = state.kirimanList.filter(function(x){ return x.no===no; })[0]; if(!k) return;
+  var s = sesiStat(no);
+  if(s.koli){ toast('Sesi ini sudah ada '+s.koli+' koli — hapus kolinya dulu', 3200); return; }
+  if(!confirm('Hapus sesi '+k.vendor+(k.sj?' · '+k.sj:'')+' ('+no+')?\nSesi ini belum ada isinya.')) return;
+  var idx = state.kirimanList.indexOf(k);
+  state.kirimanList.splice(idx,1);
+  if(state.kiriman && state.kiriman.no===no){ state.kiriman=null; state.sesiNo=''; try{ localStorage.removeItem(LS.kiriman); }catch(e){} }
+  renderSesi(); toast('Sesi '+no+' dihapus');
+  postExec({action:'delkiriman', no:no}, 2).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+  }).catch(function(e){
+    state.kirimanList.splice(idx,0,k); renderSesi();
+    alert('Gagal menghapus sesi: '+e.message);
+  });
+}
+
+function hapusKoli(no){
+  var k = state.koli.filter(function(x){ return x.no===no; })[0]; if(!k) return;
+  var its = state.items[no]||[];
+  var terambil = its.some(function(i){ return num(i.qty)-num(i.sisa!=null?i.sisa:i.qty) > 0; });
+  if(terambil){ toast('Koli ini sudah ada pengambilannya — pakai "Batalkan koli"', 3600); return; }
+  if(!confirm('Hapus koli '+no+' beserta '+its.length+' barisnya?\nTindakan ini tidak bisa dibatalkan.')) return;
+  var idx = state.koli.indexOf(k), simpanItem = its;
+  state.koli.splice(idx,1); delete state.items[no]; delete state.sel[no];
+  hide('backRack'); hide('backDet');
+  state.editNo=null; state.editFoto='';
+  show(k.tipe==='BULK' ? 'bulk' : 'koli');
+  toast('Koli '+no+' dihapus');
+  postExec({action:'delkoli', no:no}, 2).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+  }).catch(function(e){
+    state.koli.splice(idx,0,k); state.items[no]=simpanItem;
+    if(state.screen==='koli') renderKoliList(); if(state.screen==='bulk') renderBulk();
+    alert('Gagal menghapus koli: '+e.message);
+  });
+}
+
+/* item yang ternyata tidak jadi diambil / tidak ada barangnya */
+function hapusItem(idx){
+  var s = state.ambilKoli; if(!s) return;
+  var it = s.items[idx]; if(!it) return;
+  var terambil = num(it.qty)-num(it.sisa);
+  if(terambil>0){ toast('Item ini sudah pernah diambil sebagian — kurangi lewat Edit koli', 3600); return; }
+  var sisaItem = s.items.filter(function(x){ return x!==it; });
+  if(!sisaItem.length){ toast('Ini item terakhir — hapus kolinya saja', 3200); return; }
+  if(!confirm('Hapus "'+(it.nama||it.kode)+'" dari koli '+s.koli.no+'?\nBarisnya hilang dari data koli.')) return;
+  var no = s.koli.no;
+  var arr = state.items[no]||[];
+  var pos = -1;
+  for(var i=0;i<arr.length;i++) if(arr[i].kode===it.kode && arr[i].nama===it.nama){ pos=i; break; }
+  var backup = pos>=0? arr[pos] : null;
+  if(pos>=0) arr.splice(pos,1);
+  s.items = sisaItem;
+  s.koli.sku = arr.length;
+  s.koli.qty = arr.reduce(function(a,b){ return a+num(b.qty); },0);
+  renderAmbilBox(s.koli, s.items);
+  toast(it.kode+' dihapus dari '+no);
+  postExec({action:'delitem', no:no, kode:it.kode, nama:it.nama}, 2).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+  }).catch(function(e){
+    if(backup && pos>=0) arr.splice(pos,0,backup);
+    s.items.splice(idx,0,it);
+    s.koli.sku = arr.length; s.koli.qty = arr.reduce(function(a,b){ return a+num(b.qty); },0);
+    renderAmbilBox(s.koli, s.items);
+    alert('Gagal menghapus item: '+e.message);
+  });
+}
 
 /* ---------- isi satu sesi ---------- */
 function openSesiView(no){
@@ -1219,6 +1297,7 @@ function renderAmbilBox(k, its){
         '<button class="qbtn" onclick="stepAmbil('+idx+',-1)">−</button>'+
         '<input type="number" inputmode="numeric" id="am'+idx+'" value="'+i.ambil+'" onchange="setAmbil('+idx+',this.value)">'+
         '<button class="qbtn" onclick="stepAmbil('+idx+',1)">+</button>')+
+      '<button class="del" onclick="hapusItem('+idx+')" title="Hapus item ini dari koli">🗑️</button>'+
     '</div>';
   }).join('');
   var tot = its.filter(function(i){return i.ikut;}).reduce(function(a,b){return a+num(b.ambil);},0);
@@ -1322,6 +1401,15 @@ function openKoliEdit(no){
   $('edTitle').textContent = 'Edit '+no;
   $('btnSubmit').textContent = '💾 Simpan perubahan';
   show('buat');
+}
+
+/* tautan hapus koli muncul di kartu "Isi koli" saat sedang mengedit koli tersimpan */
+function tautanHapusKoli(){
+  var el = $('hapusKoliWrap');
+  if(!el) return;
+  el.innerHTML = state.editNo
+    ? '<button class="lnk" style="color:var(--err)" onclick="hapusKoli(\''+state.editNo+'\')">🗑️ Hapus koli '+esc(state.editNo)+'</button>'
+    : '';
 }
 
 function showMenu(){
@@ -1628,6 +1716,7 @@ function renderCart(){
   $('stSku').textContent = draft.items.length;
   $('stQty').textContent = tq;
   $('cartCount').textContent = draft.items.length ? ('· '+draft.items.length+' SKU / '+tq+' qty') : '';
+  tautanHapusKoli();
 }
 function cartStep(i,d){
   var it=draft.items[i]; if(!it) return;
@@ -1850,8 +1939,8 @@ function openKiriman(){
     '<h3>➕ Sesi kiriman baru</h3>'+
     '<div class="muted">Satu kedatangan / surat jalan = satu sesi. Semua koli di dalamnya otomatis membawa vendor & no surat jalan ini.</div>'+
     '<label class="lb">Vendor (wajib)</label>'+
-    '<input type="text" id="nkVendor" placeholder="Nama vendor" list="vendorList" autocomplete="off">'+
-    '<datalist id="vendorList">'+state.vendors.map(function(v){ return '<option value="'+esc(v)+'">'; }).join('')+'</datalist>'+
+    '<input type="search" id="nkVendor" placeholder="Ketik untuk cari / nama vendor baru" autocomplete="off" oninput="cariVendor()">'+
+    '<div id="nkList" class="vlist"></div>'+
     '<label class="lb">No. surat jalan (opsional)</label>'+
     '<input type="text" id="nkSJ" placeholder="mis. SJ-88912" autocomplete="off">'+
     '<div style="height:12px"></div>'+
@@ -1859,7 +1948,36 @@ function openKiriman(){
     '<div style="height:8px"></div>'+
     '<button class="btn sec" onclick="hide(\'backDet\')">Batal</button>';
   showEl('backDet');
+  cariVendor();
   setTimeout(function(){ $('nkVendor').focus(); }, 80);
+}
+
+/* pencarian vendor: ketik → daftar tersaring, ketuk untuk memilih;
+   kalau tidak ada yang cocok, teks yang diketik dipakai sebagai vendor baru */
+function cariVendor(){
+  var box = $('nkList'); if(!box) return;
+  var q = norm($('nkVendor').value||'');
+  var toks = q.split(' ').filter(Boolean);
+  var list = state.vendors.slice().sort(function(a,b){ return a.localeCompare(b); });
+  if(toks.length){
+    list = list.filter(function(v){
+      var h = norm(v);
+      for(var i=0;i<toks.length;i++) if(h.indexOf(toks[i])<0) return false;
+      return true;
+    });
+  }
+  var persis = state.vendors.some(function(v){ return norm(v)===q; });
+  var h = list.slice(0,8).map(function(v){
+    return '<div class="vrow" onclick="pilihVendor(\''+v.replace(/'/g,"\\'")+'\')">'+hl(v, toks)+'</div>';
+  }).join('');
+  if(!list.length) h = '<div class="muted" style="padding:7px 4px">Belum ada vendor bernama itu — akan dibuat sebagai vendor baru.</div>';
+  else if(q && !persis) h += '<div class="muted" style="padding:6px 4px">Tidak ada di daftar? Lanjutkan saja, akan dibuat baru.</div>';
+  box.innerHTML = h;
+}
+function pilihVendor(v){
+  $('nkVendor').value = v;
+  cariVendor();
+  $('nkSJ').focus();
 }
 
 function createKiriman(){
