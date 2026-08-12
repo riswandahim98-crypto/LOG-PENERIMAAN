@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Terima Koli</title>
+<style>
+:root{
+  --bg:#0f1417; --card:#161d21; --card2:#1c252a; --line:#2a353b; --tx:#e6eef1; --tx2:#93a3ab;
+  --acc:#14b8a6; --acc2:#0d9488; --warn:#f59e0b; --err:#ef4444; --ok:#22c55e; --r:14px;
+}
+body.light{ --bg:#f3f6f7; --card:#fff; --card2:#eef3f4; --line:#dbe3e6; --tx:#12211f; --tx2:#5d7078; }
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{overflow-x:hidden}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;padding-bottom:74px}
+button,input,select,textarea{font:inherit;color:inherit}
+.hide{display:none!important}
+
+header{position:sticky;top:0;z-index:40;background:var(--card);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;padding:9px 12px}
+.brand{font-weight:800;letter-spacing:.2px;font-size:16px;white-space:nowrap}
+.brand span{color:var(--acc)}
+.sp{flex:1}
+.ico{background:var(--card2);border:1px solid var(--line);border-radius:10px;width:36px;height:36px;
+  display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer}
+.chipu{background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:13px;
+  max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+
+.wrap{padding:12px;max-width:760px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:12px}
+h2{font-size:15px;margin:0 0 10px}
+label.lb{display:block;font-size:12px;color:var(--tx2);margin:8px 0 4px;font-weight:600}
+input[type=text],input[type=date],input[type=number],input[type=search],textarea,select{
+  width:100%;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;outline:none}
+input:focus,textarea:focus,select:focus{border-color:var(--acc)}
+textarea{min-height:56px;resize:vertical}
+.btn{background:var(--acc);color:#04211d;border:none;border-radius:12px;padding:12px 14px;font-weight:800;cursor:pointer;width:100%}
+.btn:active{background:var(--acc2)}
+.btn.sec{background:var(--card2);color:var(--tx);border:1px solid var(--line);font-weight:700}
+.btn.dgr{background:var(--err);color:#fff}
+.btn.sm{padding:8px 10px;font-size:13px;width:auto;border-radius:10px}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{min-width:0}
+.muted{color:var(--tx2);font-size:12px}
+.err{color:var(--err)} .okc{color:var(--ok)}
+
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--card);border-top:1px solid var(--line);
+  display:flex;padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+.tab{flex:1;text-align:center;padding:8px 4px;border-radius:12px;font-size:12px;font-weight:700;color:var(--tx2);cursor:pointer}
+.tab.on{background:var(--card2);color:var(--acc)}
+.tab b{display:block;font-size:18px;font-weight:400}
+
+.pill{display:inline-block;background:var(--card2);border:1px solid var(--line);border-radius:999px;
+  padding:6px 11px;font-size:12.5px;margin:0 6px 6px 0;cursor:pointer;white-space:nowrap}
+.pill.on{background:var(--acc);color:#04211d;border-color:var(--acc);font-weight:800}
+
+.res{max-height:46vh;overflow:auto;margin-top:8px}
+.it{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:7px;cursor:pointer}
+.it .n{font-weight:700;font-size:14px}
+.it .m{font-size:11.5px;color:var(--tx2);margin-top:2px}
+mark{background:rgba(20,184,166,.35);color:inherit;border-radius:3px;padding:0 1px}
+
+.cart .it{display:flex;gap:8px;align-items:center;cursor:default}
+.cart .it .g{flex:1}
+.qbtn{width:34px;height:34px;border-radius:9px;background:var(--card);border:1px solid var(--line);font-size:17px;cursor:pointer}
+.qv{min-width:44px;text-align:center;font-weight:800}
+.del{color:var(--err);background:none;border:none;font-size:16px;cursor:pointer;padding:4px 6px}
+
+.stat{display:flex;gap:8px;margin-bottom:10px}
+.stat div{flex:1;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px;text-align:center}
+.stat b{display:block;font-size:18px}
+.stat s{display:block;text-decoration:none;font-size:11px;color:var(--tx2)}
+
+.kcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start}
+.kcard.sel{border-color:var(--acc)}
+.kcard .ck{width:22px;height:22px;accent-color:var(--acc);margin-top:2px;flex:none}
+.kcard .b{flex:1;cursor:pointer}
+.kno{font-weight:800;font-size:14.5px;letter-spacing:.3px}
+.kmeta{font-size:11.5px;color:var(--tx2);margin-top:2px}
+.badge{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:999px;background:var(--card2);border:1px solid var(--line);margin-left:6px}
+.badge.void{background:rgba(239,68,68,.15);border-color:var(--err);color:var(--err)}
+
+.back{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--card);border:1px solid var(--line);border-radius:16px 16px 0 0;width:100%;max-width:760px;
+  padding:14px;max-height:92vh;overflow:auto}
+.sheet h3{margin:0 0 8px;font-size:16px}
+.grab{width:40px;height:4px;background:var(--line);border-radius:3px;margin:0 auto 10px}
+
+#reader{width:100%;border-radius:12px;overflow:hidden}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;background:#111c1a;color:#fff;border:1px solid var(--acc);
+  padding:9px 14px;border-radius:999px;font-size:13px;z-index:90;opacity:0;transition:.2s;pointer-events:none;max-width:88vw;text-align:center}
+.toast.on{opacity:1}
+table.dt{width:100%;border-collapse:collapse;font-size:13px}
+table.dt th,table.dt td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left}
+table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
+
+/* ============ LABEL 10x10 cm ============ */
+#printRoot{display:none;background:#fff;color:#000}
+.label{width:100mm;height:100mm;padding:5mm 5mm 4mm;box-sizing:border-box;background:#fff;color:#000;
+  font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;overflow:hidden;
+  page-break-after:always;break-after:page;border:0}
+.label:last-child{page-break-after:auto;break-after:auto}
+.lhead{display:flex;gap:3mm;align-items:flex-start;border-bottom:.6mm solid #000;padding-bottom:2mm}
+.lhead .lg{flex:1;min-width:0}
+.lno{font-size:19pt;font-weight:bold;letter-spacing:.3px;line-height:1.05;word-break:break-all}
+.lno.xl{font-size:38pt;letter-spacing:1px}
+.lno.lg{font-size:26pt}
+.lsub{font-size:8pt;margin-top:1mm;line-height:1.25}
+.lqr{width:20mm;height:20mm;flex:none}
+.lqr svg,.lqr img{width:20mm;height:20mm;display:block}
+.ltab{width:100%;border-collapse:collapse;margin-top:2mm;table-layout:fixed}
+.ltab th{font-size:7.5pt;text-align:left;border-bottom:.3mm solid #000;padding:.6mm 0}
+.ltab td{font-size:8.5pt;padding:.7mm 0;vertical-align:top;border-bottom:.15mm dotted #999;line-height:1.15}
+.ltab td.q,.ltab th.q{text-align:right;width:18mm;font-weight:bold;white-space:nowrap}
+.lfoot{margin-top:auto;padding-top:1.5mm;border-top:.3mm solid #000;font-size:8pt;display:flex;justify-content:space-between}
+@media print{
+  body{background:#fff;padding:0}
+  body>*{display:none!important}
+  #printRoot{display:block!important}
+  @page{size:100mm 100mm;margin:0}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">📦 Terima <span>Koli</span></div>
+  <div class="sp"></div>
+  <div class="chipu" id="chipUser" onclick="logout()">👤 —</div>
+  <div class="ico" id="btnMenu" onclick="showMenu()">☰</div>
+</header>
+
+<!-- ============ SETUP ============ -->
+<div class="wrap hide" id="scSetup">
+  <div class="card">
+    <h2>⚙️ Pengaturan awal</h2>
+    <p class="muted">Tempel URL Web App (/exec) hasil deploy Apps Script.</p>
+    <label class="lb">URL /exec</label>
+    <input type="text" id="inExec" placeholder="https://script.google.com/macros/s/.../exec">
+    <div style="height:10px"></div>
+    <button class="btn" onclick="saveExec()">Simpan &amp; Tes Koneksi</button>
+    <div class="muted" id="setupMsg" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ============ LOGIN ============ -->
+<div class="wrap hide" id="scLogin">
+  <div class="card">
+    <h2>👤 Siapa yang mendata?</h2>
+    <div id="picList"></div>
+    <label class="lb">Nama PIC</label>
+    <input type="text" id="inUser" placeholder="Ketik nama…" autocomplete="off">
+    <label class="lb" id="pinLb" style="display:none">PIN</label>
+    <input type="text" id="inPin" inputmode="numeric" placeholder="PIN" style="display:none">
+    <div style="height:10px"></div>
+    <button class="btn" onclick="doLogin()">Masuk</button>
+    <div class="muted err" id="loginMsg" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ============ BUAT KOLI ============ -->
+<div class="wrap hide" id="scBuat">
+  <div class="card">
+    <h2>📥 Koli baru</h2>
+    <div class="row">
+      <div style="flex:1">
+        <label class="lb">Tanggal terima</label>
+        <input type="date" id="dTgl" onchange="draftSave()">
+      </div>
+      <div style="flex:1">
+        <label class="lb">Vendor</label>
+        <input type="text" id="dVendor" list="vendorList" placeholder="Nama vendor" autocomplete="off" oninput="draftSave()">
+        <datalist id="vendorList"></datalist>
+      </div>
+    </div>
+    <label class="lb">Catatan (opsional)</label>
+    <input type="text" id="dNote" placeholder="No. surat jalan / keterangan" oninput="draftSave()">
+  </div>
+
+  <div class="card">
+    <h2>🔎 Tambah item</h2>
+    <div class="row">
+      <input type="search" id="q" placeholder="Cari nama / kode, atau scan…" autocomplete="off">
+      <button class="ico" onclick="openScan()" title="Scan barcode">📷</button>
+    </div>
+    <div class="muted" id="masterInfo" style="margin-top:6px"></div>
+    <div class="res" id="res"></div>
+  </div>
+
+  <div class="card">
+    <h2>🧺 Isi koli</h2>
+    <div class="stat">
+      <div><b id="stSku">0</b><s>SKU</s></div>
+      <div><b id="stQty">0</b><s>Total qty</s></div>
+    </div>
+    <div class="cart" id="cart"></div>
+    <div style="height:6px"></div>
+    <button class="btn" id="btnSubmit" onclick="submitKoli()">✅ Submit &amp; Buat No. Koli</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="clearDraft(true)">Kosongkan</button>
+  </div>
+</div>
+
+<!-- ============ RIWAYAT / LABEL ============ -->
+<div class="wrap hide" id="scRiwayat">
+  <div class="card">
+    <h2>🖨️ Filter label</h2>
+    <div id="fDay"></div>
+    <div class="row" style="margin-top:6px">
+      <div style="flex:1">
+        <label class="lb">Tanggal</label>
+        <input type="date" id="fTgl" onchange="renderKoli()">
+      </div>
+      <div style="flex:1">
+        <label class="lb">PIC hitung</label>
+        <select id="fPic" onchange="renderKoli()"><option value="">Semua PIC</option></select>
+      </div>
+    </div>
+    <label class="lb">Vendor</label>
+    <select id="fVendor" onchange="renderKoli()"><option value="">Semua vendor</option></select>
+    <label class="lb">Cari no. koli / SKU</label>
+    <input type="search" id="fQ" placeholder="KL-260811-001 atau nama SKU" oninput="renderKoli()">
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:8px">
+      <button class="btn sm sec" onclick="selAll(true)">Pilih semua</button>
+      <button class="btn sm sec" onclick="selAll(false)">Bersihkan</button>
+      <div class="sp"></div>
+      <button class="btn sm sec" onclick="loadKoli(true)">↻</button>
+    </div>
+    <button class="btn" id="btnPrint" onclick="printSelected()">🖨️ Cetak Label (0)</button>
+    <div class="muted" style="margin-top:6px">Ukuran label 10×10 cm. Di dialog print pilih ukuran kertas 100×100 mm / Custom, margin None.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><h2 style="margin:0">📚 Daftar koli</h2><div class="sp"></div><span class="muted" id="kCount"></span></div>
+    <div id="kList" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- ============ TABS ============ -->
+<div class="tabs hide" id="tabs">
+  <div class="tab on" id="tabBuat" onclick="show('buat')"><b>📥</b>Buat Koli</div>
+  <div class="tab" id="tabRiwayat" onclick="show('riwayat')"><b>🖨️</b>Riwayat &amp; Label</div>
+</div>
+
+<!-- ============ MODALS ============ -->
+<div class="back hide" id="backQty" onclick="if(event.target===this)hide('backQty')">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3 id="qtyName">Item</h3>
+    <div class="muted" id="qtyMeta"></div>
+    <label class="lb">Qty</label>
+    <div class="row">
+      <button class="qbtn" onclick="qtyStep(-1)">−</button>
+      <input type="number" id="qtyIn" inputmode="numeric" value="1" style="text-align:center;font-size:20px;font-weight:800">
+      <button class="qbtn" onclick="qtyStep(1)">+</button>
+    </div>
+    <div style="margin-top:8px" id="qtyQuick"></div>
+    <div style="height:10px"></div>
+    <button class="btn" onclick="qtyConfirm()">Tambah ke koli</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="hide('backQty')">Batal</button>
+  </div>
+</div>
+
+<div class="back hide" id="backScan" onclick="if(event.target===this)closeScan()">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>📷 Scan barcode</h3>
+    <div id="reader"></div>
+    <div style="height:10px"></div>
+    <button class="btn sec" onclick="closeScan()">Tutup</button>
+  </div>
+</div>
+
+<div class="back hide" id="backDet" onclick="if(event.target===this)hide('backDet')">
+  <div class="sheet" id="detBox"></div>
+</div>
+
+<div class="back hide" id="backMenu" onclick="if(event.target===this)hide('backMenu')">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>☰ Menu</h3>
+    <button class="btn sec" onclick="refreshMaster()">↻ Muat ulang master data</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="toggleTheme()">🌗 Ganti tema</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="openSheet()">📄 Buka Google Sheet hasil</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="hide('backMenu');showSetup()">⚙️ Ubah URL /exec</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="logout()">👤 Ganti PIC</button>
+    <div style="height:10px"></div>
+    <div class="muted" id="menuInfo"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div id="printRoot"></div>
+
+<script>
+/* ================= KONFIG ================= */
+var DEFAULT_EXEC = ''; // isi URL /exec di sini kalau mau tanpa setup manual
+var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1'};
+
+var state = {
+  exec:'', user:'', pics:[], vendors:[], master:[], byBar:{}, byKode:{},
+  koli:[], items:{}, sel:{}, outUrl:'', scanner:null, pend:null, screen:'buat'
+};
+
+/* ================= UTIL ================= */
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function hide(id){ $(id).classList.add('hide'); }
+function showEl(id){ $(id).classList.remove('hide'); }
+function toast(m,ms){ var t=$('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove('on');}, ms||2200); }
+function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function pad(n){ return (n<10?'0':'')+n; }
+function dmy(s){ if(!s) return '-'; var p=String(s).split('-'); return p.length===3? (p[2]+'/'+p[1]+'/'+p[0].slice(2)) : s; }
+function uuid(){ return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,9); }
+function norm(s){ return String(s==null?'':s).toLowerCase().replace(/\s+/g,' ').trim(); }
+function normCode(s){ return String(s==null?'':s).replace(/[^0-9A-Za-z]/g,'').toUpperCase(); }
+function num(v){ var n=Number(v); return isNaN(n)?0:n; }
+
+/* ================= BACKEND ================= */
+function postExec(payload, tries){
+  tries = tries||3;
+  var attempt = function(n){
+    var ctl = new AbortController();
+    var to = setTimeout(function(){ ctl.abort(); }, 25000);
+    return fetch(state.exec, {
+      method:'POST', body:JSON.stringify(payload),
+      headers:{'Content-Type':'text/plain;charset=utf-8'}, signal:ctl.signal, redirect:'follow'
+    }).then(function(r){ clearTimeout(to); return r.text(); }).then(function(t){
+      var o; try{ o=JSON.parse(t); }catch(e){ throw new Error('Respons bukan JSON (cek akses deployment = Anyone)'); }
+      if(o && o.ok===false && o.error) throw new Error(o.error);
+      return o;
+    }).catch(function(e){
+      clearTimeout(to);
+      if(n<tries) return new Promise(function(res){ setTimeout(res, 700*n); }).then(function(){ return attempt(n+1); });
+      throw e;
+    });
+  };
+  return attempt(1);
+}
+
+/* ================= BOOT ================= */
+function boot(){
+  if(localStorage.getItem(LS.theme)==='light') document.body.classList.add('light');
+  state.exec = localStorage.getItem(LS.exec) || DEFAULT_EXEC;
+  state.user = localStorage.getItem(LS.user) || '';
+  $('dTgl').value = todayStr();
+  $('fTgl').value = '';
+  bindSearch();
+  loadDraft();
+  if(!state.exec){ showSetup(); return; }
+  afterExec();
+}
+
+function showSetup(){
+  hideAll(); showEl('scSetup'); $('inExec').value = state.exec||'';
+}
+function hideAll(){
+  ['scSetup','scLogin','scBuat','scRiwayat','tabs'].forEach(hide);
+}
+
+function saveExec(){
+  var u = $('inExec').value.trim();
+  if(!/^https:\/\/script\.google\.com\/.*\/exec$/.test(u)){ $('setupMsg').innerHTML='<span class="err">URL harus diakhiri /exec</span>'; return; }
+  state.exec = u;
+  $('setupMsg').textContent = 'Menguji…';
+  fetch(u+'?action=config').then(function(r){return r.text();}).then(function(t){
+    var o = JSON.parse(t);
+    if(!o.ok) throw new Error(o.error||'gagal');
+    localStorage.setItem(LS.exec, u);
+    state.outUrl = o.out||'';
+    $('setupMsg').innerHTML = '<span class="okc">Terhubung ✓</span>';
+    afterExec();
+  }).catch(function(e){ $('setupMsg').innerHTML = '<span class="err">Gagal: '+esc(e.message)+'</span>'; });
+}
+
+function afterExec(){
+  hideAll();
+  postExec({action:'meta'}).then(function(o){
+    state.pics = o.pics||[]; state.vendors = o.vendors||[];
+    fillVendorList();
+    renderPicList();
+  }).catch(function(e){ toast('Meta gagal: '+e.message, 3200); renderPicList(); });
+  loadMaster();
+  if(state.user){ enterApp(); } else { showEl('scLogin'); }
+}
+
+/* ================= LOGIN ================= */
+function renderPicList(){
+  var h='';
+  state.pics.forEach(function(p){ h += '<span class="pill" onclick="pickPic(\''+esc(p.nama).replace(/'/g,"\\'")+'\')">'+esc(p.nama)+'</span>'; });
+  $('picList').innerHTML = h;
+  var needPin = state.pics.some(function(p){ return p.pin; });
+  $('pinLb').style.display = needPin?'block':'none';
+  $('inPin').style.display = needPin?'block':'none';
+}
+function pickPic(n){ $('inUser').value = n; }
+function doLogin(){
+  var n = $('inUser').value.trim();
+  if(!n){ $('loginMsg').textContent='Isi nama dulu.'; return; }
+  var rec = state.pics.filter(function(p){ return norm(p.nama)===norm(n); })[0];
+  if(rec && rec.pin){
+    if($('inPin').value.trim() !== String(rec.pin)){ $('loginMsg').textContent='PIN salah.'; return; }
+    n = rec.nama;
+  }
+  state.user = n; localStorage.setItem(LS.user, n);
+  $('loginMsg').textContent='';
+  enterApp();
+}
+function logout(){
+  hide('backMenu');
+  state.user=''; localStorage.removeItem(LS.user);
+  hideAll(); showEl('scLogin'); $('inUser').value=''; $('inPin').value='';
+}
+
+function enterApp(){
+  $('chipUser').textContent = '👤 '+(state.user.split(' ')[0]||state.user);
+  hideAll(); showEl('tabs'); show(state.screen||'buat');
+  loadKoli(false);
+}
+
+function show(which){
+  state.screen = which;
+  $('scBuat').classList.toggle('hide', which!=='buat');
+  $('scRiwayat').classList.toggle('hide', which!=='riwayat');
+  $('tabBuat').classList.toggle('on', which==='buat');
+  $('tabRiwayat').classList.toggle('on', which==='riwayat');
+  if(which==='riwayat'){ if(!state.koli.length) loadKoli(true); else renderKoli(); }
+  else setTimeout(function(){ $('q').focus(); }, 60);
+}
+
+function showMenu(){
+  $('menuInfo').innerHTML = 'Master: '+state.master.length+' item<br>Koli tersimpan: '+state.koli.length+
+    (state.outUrl? '<br>Sheet: <a href="'+esc(state.outUrl)+'" target="_blank" style="color:var(--acc)">buka</a>':'');
+  showEl('backMenu');
+}
+function toggleTheme(){
+  document.body.classList.toggle('light');
+  localStorage.setItem(LS.theme, document.body.classList.contains('light')?'light':'dark');
+}
+function openSheet(){
+  if(state.outUrl){ window.open(state.outUrl,'_blank'); return; }
+  fetch(state.exec+'?action=config').then(function(r){return r.json();}).then(function(o){
+    state.outUrl=o.out||''; if(state.outUrl) window.open(state.outUrl,'_blank'); else toast('Sheet belum dibuat');
+  }).catch(function(){ toast('Gagal ambil link sheet'); });
+}
+
+/* ================= MASTER DATA ================= */
+function loadMaster(){
+  var c=null;
+  try{ c = JSON.parse(localStorage.getItem(LS.master)||'null'); }catch(e){}
+  if(c && c.rows && c.rows.length){ setMaster(c.rows); $('masterInfo').textContent = state.master.length+' item (cache) — menyegarkan…'; }
+  else $('masterInfo').textContent = 'Memuat master data…';
+  postExec({action:'master'}).then(function(o){
+    var m = o.master||{rows:[]};
+    setMaster(m.rows||[]);
+    try{ localStorage.setItem(LS.master, JSON.stringify({t:Date.now(), rows:m.rows})); }catch(e){}
+    $('masterInfo').textContent = state.master.length+' item siap (tab: '+(m.sheet||'-')+')';
+  }).catch(function(e){
+    $('masterInfo').innerHTML = '<span class="err">Master gagal dimuat: '+esc(e.message)+'</span>';
+  });
+}
+function refreshMaster(){ localStorage.removeItem(LS.master); hide('backMenu'); loadMaster(); toast('Memuat ulang master…'); }
+
+function setMaster(rows){
+  // rows: [kode, barcode, nama, satuan, kategori, brand, vendor]
+  state.master = rows.map(function(r,i){
+    var o = {kode:r[0]||'', barcode:r[1]||'', nama:r[2]||'', satuan:r[3]||'', kategori:r[4]||'', brand:r[5]||'', vendor:r[6]||'', i:i};
+    o._h = norm(o.kode+' '+o.barcode+' '+o.nama+' '+o.brand+' '+o.kategori);
+    return o;
+  });
+  state.byBar={}; state.byKode={};
+  state.master.forEach(function(o){
+    if(o.barcode) state.byBar[normCode(o.barcode)] = o;
+    if(o.kode) state.byKode[normCode(o.kode)] = o;
+  });
+}
+
+/* ================= CARI ITEM ================= */
+function score(o, toks){
+  var s=0;
+  for(var i=0;i<toks.length;i++){
+    var t=toks[i];
+    if(!t) continue;
+    var k=normCode(o.kode), b=normCode(o.barcode), tc=normCode(t);
+    if(tc && (k===tc||b===tc)) { s+=1000; continue; }
+    var p=o._h.indexOf(t);
+    if(p<0) return -1;
+    s += (p===0?24:(o._h[p-1]===' '?16:6));
+  }
+  return s;
+}
+function bindSearch(){
+  var t=null;
+  $('q').addEventListener('input', function(){ clearTimeout(t); t=setTimeout(runSearch,110); });
+  $('q').addEventListener('keydown', function(e){
+    if(e.key==='Enter'){
+      e.preventDefault();
+      var v=$('q').value.trim();
+      if(!v) return;
+      var hit = state.byBar[normCode(v)] || state.byKode[normCode(v)];
+      if(hit){ $('q').value=''; runSearch(); askQty(hit); }
+      else runSearch();
+    }
+  });
+  document.addEventListener('click', function(e){
+    if(state.screen!=='buat') return;
+    var tg=e.target.tagName;
+    if(tg==='INPUT'||tg==='TEXTAREA'||tg==='SELECT'||tg==='BUTTON') return;
+    if(document.querySelector('.back:not(.hide)')) return;
+    // jaga fokus untuk scanner fisik
+    if(document.activeElement===document.body) $('q').focus();
+  });
+}
+function runSearch(){
+  var v = $('q').value.trim();
+  var box = $('res');
+  if(!v){ box.innerHTML=''; return; }
+  var toks = norm(v).split(' ').filter(Boolean);
+  var out=[];
+  for(var i=0;i<state.master.length;i++){
+    var s = score(state.master[i], toks);
+    if(s>=0) out.push([s, state.master[i]]);
+    if(out.length>1200) break;
+  }
+  out.sort(function(a,b){ return b[0]-a[0]; });
+  out = out.slice(0,40);
+  if(!out.length){ box.innerHTML='<div class="muted">Tidak ditemukan. Bisa tetap ditambahkan manual lewat pencarian kode lain.</div>'; return; }
+  var h='';
+  out.forEach(function(p){
+    var o=p[1];
+    h += '<div class="it" onclick="askQty(state.master['+o.i+'])">'+
+         '<div class="n">'+hl(o.nama, toks)+'</div>'+
+         '<div class="m">'+hl(o.kode, toks)+(o.barcode?' • '+hl(o.barcode,toks):'')+(o.satuan?' • '+esc(o.satuan):'')+(o.brand?' • '+esc(o.brand):'')+'</div></div>';
+  });
+  box.innerHTML=h;
+}
+function hl(s, toks){
+  var out=esc(s||''); if(!out) return '';
+  toks.forEach(function(t){
+    if(!t) return;
+    try{
+      var re=new RegExp('('+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig');
+      out=out.replace(re,'<mark>$1</mark>');
+    }catch(e){}
+  });
+  return out;
+}
+
+/* ================= QTY & KERANJANG ================= */
+var draft = {tanggal:'', vendor:'', catatan:'', items:[]};
+
+function loadDraft(){
+  try{
+    var d = JSON.parse(localStorage.getItem(LS.draft)||'null');
+    if(d && d.items){ draft = d; }
+  }catch(e){}
+  if(!draft.tanggal) draft.tanggal = todayStr();
+  $('dTgl').value = draft.tanggal; $('dVendor').value = draft.vendor||''; $('dNote').value = draft.catatan||'';
+  renderCart();
+}
+function draftSave(){
+  draft.tanggal = $('dTgl').value || todayStr();
+  draft.vendor = $('dVendor').value.trim();
+  draft.catatan = $('dNote').value.trim();
+  try{ localStorage.setItem(LS.draft, JSON.stringify(draft)); }catch(e){}
+}
+function clearDraft(ask){
+  if(ask && draft.items.length && !confirm('Kosongkan isi koli ini?')) return;
+  draft.items=[]; draft.catatan=''; $('dNote').value='';
+  draftSave(); renderCart();
+}
+
+function askQty(o){
+  state.pend = o;
+  $('qtyName').textContent = o.nama || o.kode;
+  $('qtyMeta').textContent = [o.kode, o.barcode, o.satuan].filter(Boolean).join(' • ');
+  $('qtyIn').value = 1;
+  $('qtyQuick').innerHTML = [1,2,5,10,12,20,24,50,100].map(function(n){
+    return '<span class="pill" onclick="$(\'qtyIn\').value='+n+'">'+n+'</span>';
+  }).join('');
+  showEl('backQty');
+  setTimeout(function(){ $('qtyIn').select(); }, 80);
+}
+function qtyStep(d){ $('qtyIn').value = Math.max(1, num($('qtyIn').value)+d); }
+function qtyConfirm(){
+  var q = num($('qtyIn').value);
+  if(q<=0){ toast('Qty harus > 0'); return; }
+  var o = state.pend; if(!o) return;
+  var ex = draft.items.filter(function(x){ return x.kode===o.kode && x.nama===o.nama; })[0];
+  if(ex){ ex.qty += q; toast('Qty digabung → '+ex.qty); }
+  else draft.items.push({kode:o.kode, barcode:o.barcode, nama:o.nama, satuan:o.satuan, qty:q});
+  hide('backQty'); draftSave(); renderCart();
+  $('q').value=''; $('res').innerHTML=''; $('q').focus();
+}
+$('qtyIn') && $('qtyIn').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); qtyConfirm(); } });
+
+function renderCart(){
+  var h='', tq=0;
+  draft.items.forEach(function(it, i){
+    tq += num(it.qty);
+    h += '<div class="it"><div class="g"><div class="n">'+esc(it.nama||it.kode)+'</div>'+
+         '<div class="m">'+esc(it.kode)+(it.satuan?' • '+esc(it.satuan):'')+'</div></div>'+
+         '<button class="qbtn" onclick="cartStep('+i+',-1)">−</button>'+
+         '<span class="qv">'+num(it.qty)+'</span>'+
+         '<button class="qbtn" onclick="cartStep('+i+',1)">+</button>'+
+         '<button class="del" onclick="cartDel('+i+')">✕</button></div>';
+  });
+  $('cart').innerHTML = h || '<div class="muted">Belum ada item. Cari atau scan di atas.</div>';
+  $('stSku').textContent = draft.items.length;
+  $('stQty').textContent = tq;
+}
+function cartStep(i,d){
+  var it=draft.items[i]; if(!it) return;
+  it.qty = num(it.qty)+d;
+  if(it.qty<=0) draft.items.splice(i,1);
+  draftSave(); renderCart();
+}
+function cartDel(i){ draft.items.splice(i,1); draftSave(); renderCart(); }
+
+/* ================= SUBMIT ================= */
+function submitKoli(){
+  draftSave();
+  if(!draft.items.length){ toast('Koli masih kosong'); return; }
+  if(!draft.vendor && !confirm('Vendor belum diisi. Lanjut submit?')) return;
+  var btn = $('btnSubmit');
+  btn.disabled = true; btn.textContent = 'Menyimpan…';
+  var payload = {
+    action:'submit', clientId: draft.cid || (draft.cid = uuid()),
+    tanggal: draft.tanggal, vendor: draft.vendor, pic: state.user, catatan: draft.catatan,
+    items: draft.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; })
+  };
+  try{ localStorage.setItem(LS.draft, JSON.stringify(draft)); }catch(e){}
+  postExec(payload).then(function(o){
+    btn.disabled=false; btn.textContent='✅ Submit & Buat No. Koli';
+    if(!o.ok) throw new Error(o.error||'gagal');
+    var no=o.no;
+    var items = draft.items.slice();
+    var kol = {no:no, tanggal:draft.tanggal, vendor:draft.vendor, pic:state.user, sku:items.length,
+               qty:items.reduce(function(a,b){return a+num(b.qty);},0), catatan:draft.catatan, status:'OK'};
+    state.koli.unshift(kol);
+    state.items[no] = items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; });
+    draft.cid = null; clearDraft(false);
+    if(draft.vendor && state.vendors.indexOf(draft.vendor)<0){ state.vendors.push(draft.vendor); fillVendorList(); }
+    doneDialog(kol);
+  }).catch(function(e){
+    btn.disabled=false; btn.textContent='✅ Submit & Buat No. Koli';
+    alert('Gagal simpan: '+e.message+'\n\nData koli masih tersimpan di HP, coba Submit lagi.');
+  });
+}
+
+function doneDialog(k){
+  $('detBox').innerHTML =
+    '<div class="grab"></div><h3>✅ Koli tersimpan</h3>'+
+    '<div style="font-size:26px;font-weight:800;letter-spacing:.5px;margin:6px 0">'+esc(k.no)+'</div>'+
+    '<div class="muted">'+esc(k.vendor||'-')+' • '+dmy(k.tanggal)+' • '+esc(k.pic)+'<br>'+k.sku+' SKU • '+k.qty+' qty</div>'+
+    '<div style="height:12px"></div>'+
+    '<button class="btn" onclick="hide(\'backDet\');printKoli([\''+k.no+'\'])">🖨️ Cetak label koli ini</button>'+
+    '<div style="height:8px"></div>'+
+    '<button class="btn sec" onclick="hide(\'backDet\')">Buat koli berikutnya</button>';
+  showEl('backDet');
+}
+
+/* ================= RIWAYAT ================= */
+function loadKoli(showToast){
+  return postExec({action:'list'}).then(function(o){
+    state.koli = (o.koli||[]).slice().reverse();
+    state.items = {};
+    (o.items||[]).forEach(function(r){
+      var no=r[0]; if(!state.items[no]) state.items[no]=[];
+      state.items[no].push({kode:r[1], nama:r[2], satuan:r[3], qty:num(r[4])});
+    });
+    fillFilters();
+    renderKoli();
+    if(showToast) toast(state.koli.length+' koli dimuat');
+  }).catch(function(e){ if(showToast) toast('Gagal memuat: '+e.message, 3200); });
+}
+
+function fillVendorList(){
+  $('vendorList').innerHTML = state.vendors.map(function(v){ return '<option value="'+esc(v)+'">'; }).join('');
+}
+function fillFilters(){
+  var pics={}, vends={};
+  state.koli.forEach(function(k){ if(k.pic) pics[k.pic]=1; if(k.vendor) vends[k.vendor]=1; });
+  state.pics.forEach(function(p){ pics[p.nama]=1; });
+  state.vendors.forEach(function(v){ vends[v]=1; });
+  var cur1=$('fPic').value, cur2=$('fVendor').value;
+  $('fPic').innerHTML = '<option value="">Semua PIC</option>'+Object.keys(pics).sort().map(function(p){ return '<option'+(p===cur1?' selected':'')+'>'+esc(p)+'</option>'; }).join('');
+  $('fVendor').innerHTML = '<option value="">Semua vendor</option>'+Object.keys(vends).sort().map(function(v){ return '<option'+(v===cur2?' selected':'')+'>'+esc(v)+'</option>'; }).join('');
+  var days = {};
+  state.koli.forEach(function(k){ if(k.tanggal) days[k.tanggal]=(days[k.tanggal]||0)+1; });
+  var dl = Object.keys(days).sort().reverse().slice(0,6);
+  var h = '<span class="pill'+(($('fTgl').value==='')?' on':'')+'" onclick="setDay(\'\')">Semua</span>'+
+          '<span class="pill" onclick="setDay(\''+todayStr()+'\')">Hari ini</span>';
+  dl.forEach(function(d){ h += '<span class="pill'+($('fTgl').value===d?' on':'')+'" onclick="setDay(\''+d+'\')">'+dmy(d)+' ('+days[d]+')</span>'; });
+  $('fDay').innerHTML = h;
+}
+function setDay(d){ $('fTgl').value=d; fillFilters(); renderKoli(); }
+
+function filtered(){
+  var d=$('fTgl').value, p=$('fPic').value, v=$('fVendor').value, q=norm($('fQ').value);
+  return state.koli.filter(function(k){
+    if(d && k.tanggal!==d) return false;
+    if(p && k.pic!==p) return false;
+    if(v && k.vendor!==v) return false;
+    if(q){
+      var hay = norm(k.no+' '+k.vendor+' '+k.pic+' '+(k.catatan||''));
+      var its = state.items[k.no]||[];
+      var hit = hay.indexOf(q)>=0 || its.some(function(i){ return norm(i.nama+' '+i.kode).indexOf(q)>=0; });
+      if(!hit) return false;
+    }
+    return true;
+  });
+}
+
+function renderKoli(){
+  var list = filtered();
+  var h='';
+  list.slice(0,300).forEach(function(k){
+    var its = state.items[k.no]||[];
+    var prev = its.slice(0,3).map(function(i){ return esc(i.nama||i.kode)+' ×'+i.qty; }).join(', ');
+    if(its.length>3) prev += ', +'+(its.length-3)+' lagi';
+    h += '<div class="kcard'+(state.sel[k.no]?' sel':'')+'" id="kc_'+esc(k.no)+'">'+
+      '<input type="checkbox" class="ck" '+(state.sel[k.no]?'checked':'')+' onchange="toggleSel(\''+k.no+'\',this.checked)">'+
+      '<div class="b" onclick="openDetail(\''+k.no+'\')">'+
+        '<div class="kno">'+esc(k.no)+(k.status==='BATAL'?'<span class="badge void">BATAL</span>':'')+'</div>'+
+        '<div class="kmeta">'+esc(k.vendor||'-')+' • '+dmy(k.tanggal)+' • '+esc(k.pic||'-')+'</div>'+
+        '<div class="kmeta">'+(k.sku||its.length)+' SKU • '+(k.qty||0)+' qty'+(prev?' — '+prev:'')+'</div>'+
+      '</div></div>';
+  });
+  $('kList').innerHTML = h || '<div class="muted">Belum ada koli yang cocok dengan filter.</div>';
+  $('kCount').textContent = list.length+' koli';
+  updatePrintBtn();
+}
+function toggleSel(no, on){
+  if(on) state.sel[no]=1; else delete state.sel[no];
+  var el=$('kc_'+no); if(el) el.classList.toggle('sel', !!on);
+  updatePrintBtn();
+}
+function selAll(on){
+  if(on) filtered().forEach(function(k){ state.sel[k.no]=1; });
+  else state.sel={};
+  renderKoli();
+}
+function selectedNos(){
+  var f = filtered().map(function(k){ return k.no; });
+  var s = f.filter(function(n){ return state.sel[n]; });
+  return s;
+}
+function updatePrintBtn(){
+  var n = selectedNos().length, tot = filtered().length;
+  $('btnPrint').textContent = n? ('🖨️ Cetak Label ('+n+' terpilih)') : ('🖨️ Cetak Label semua hasil filter ('+tot+')');
+}
+function printSelected(){
+  var nos = selectedNos();
+  if(!nos.length) nos = filtered().map(function(k){ return k.no; });
+  if(!nos.length){ toast('Tidak ada koli untuk dicetak'); return; }
+  if(nos.length>60 && !confirm('Akan mencetak '+nos.length+' koli. Lanjut?')) return;
+  printKoli(nos);
+}
+
+function openDetail(no){
+  var k = state.koli.filter(function(x){ return x.no===no; })[0];
+  if(!k) return;
+  var its = state.items[no]||[];
+  var rows = its.map(function(i){ return '<tr><td>'+esc(i.nama||i.kode)+'<div class="muted">'+esc(i.kode)+'</div></td><td class="q">'+i.qty+'</td></tr>'; }).join('');
+  $('detBox').innerHTML = '<div class="grab"></div>'+
+    '<h3>'+esc(no)+(k.status==='BATAL'?'<span class="badge void">BATAL</span>':'')+'</h3>'+
+    '<div class="muted">'+esc(k.vendor||'-')+' • '+dmy(k.tanggal)+' • PIC '+esc(k.pic||'-')+(k.catatan?'<br>'+esc(k.catatan):'')+'</div>'+
+    '<table class="dt"><thead><tr><th>SKU</th><th class="q">Qty</th></tr></thead><tbody>'+rows+'</tbody>'+
+    '<tfoot><tr><th>'+its.length+' SKU</th><th class="q">'+its.reduce(function(a,b){return a+num(b.qty);},0)+'</th></tr></tfoot></table>'+
+    '<div style="height:10px"></div>'+
+    '<button class="btn" onclick="hide(\'backDet\');printKoli([\''+no+'\'])">🖨️ Cetak label</button>'+
+    '<div style="height:8px"></div>'+
+    (k.status==='BATAL'
+      ? '<button class="btn sec" onclick="voidKoli(\''+no+'\',true)">↩︎ Aktifkan lagi</button>'
+      : '<button class="btn sec" onclick="voidKoli(\''+no+'\',false)">🗑️ Batalkan koli</button>')+
+    '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+  showEl('backDet');
+}
+
+function voidKoli(no, undo){
+  if(!undo && !confirm('Batalkan '+no+'? Baris di sheet ditandai BATAL (tidak dihapus).')) return;
+  postExec({action:'void', no:no, undo:!!undo}).then(function(){
+    var k=state.koli.filter(function(x){return x.no===no;})[0];
+    if(k) k.status = undo?'OK':'BATAL';
+    hide('backDet'); renderKoli(); toast(undo?'Diaktifkan lagi':'Koli dibatalkan');
+  }).catch(function(e){ toast('Gagal: '+e.message, 3200); });
+}
+
+/* ================= LABEL 10x10 cm ================= */
+function qrSvg(text){
+  try{
+    if(typeof qrcode==='undefined') return '';
+    var q = qrcode(0,'M'); q.addData(text); q.make();
+    return q.createSvgTag({cellSize:3, margin:0, scalable:true});
+  }catch(e){ return ''; }
+}
+
+function labelShell(k, totSku, totQty){
+  var L = String(k.no||'').length;
+  var noCls = L<=8 ? ' xl' : (L<=12 ? ' lg' : '');
+  return '<div class="lhead"><div class="lg">'+
+      '<div class="lno'+noCls+'">'+esc(k.no)+'</div>'+
+      '<div class="lsub">'+esc(k.vendor||'-')+'<br>'+dmy(k.tanggal)+' • PIC: '+esc(k.pic||'-')+(k.catatan?' • '+esc(k.catatan):'')+'</div>'+
+    '</div><div class="lqr">'+qrSvg(k.no)+'</div></div>'+
+    '<table class="ltab"><thead><tr><th>NAMA SKU</th><th class="q">QTY</th></tr></thead><tbody></tbody></table>'+
+    '<div class="lfoot"><span>'+totSku+' SKU • total '+totQty+'</span><span class="lpg"></span></div>';
+}
+
+/* Isi label diukur langsung: baris ditambah satu per satu sampai mentok
+   tinggi 100 mm, lalu lanjut ke label berikutnya (aman untuk nama SKU panjang). */
+function buildLabels(nos){
+  var root = $('printRoot');
+  root.innerHTML = '';
+  root.style.cssText = 'display:block;position:absolute;left:-10000px;top:0';
+  nos.forEach(function(no){
+    var k = state.koli.filter(function(x){ return x.no===no; })[0];
+    if(!k) return;
+    var its = (state.items[no]||[]).slice();
+    if(!its.length) its = [{nama:'(tanpa detail item)', kode:'', qty:0, satuan:''}];
+    var totQty = its.reduce(function(a,b){ return a+num(b.qty); }, 0);
+    var pages = [];
+    var mk = function(){
+      var d = document.createElement('div');
+      d.className = 'label';
+      d.innerHTML = labelShell(k, its.length, totQty);
+      root.appendChild(d); pages.push(d);
+      return d;
+    };
+    var cur = mk(), tb = cur.querySelector('tbody'), n = 0;
+    its.forEach(function(i){
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+esc(i.nama||i.kode)+'</td><td class="q">'+num(i.qty)+(i.satuan?' '+esc(i.satuan):'')+'</td>';
+      tb.appendChild(tr);
+      n++;
+      if(n > 1 && cur.scrollHeight > cur.clientHeight + 1){
+        tb.removeChild(tr);
+        cur = mk(); tb = cur.querySelector('tbody');
+        tb.appendChild(tr); n = 1;
+      }
+    });
+    if(pages.length > 1){
+      pages.forEach(function(p, idx){ p.querySelector('.lpg').textContent = 'hal '+(idx+1)+'/'+pages.length; });
+    }
+  });
+  root.style.cssText = 'display:none';
+  return root.children.length;
+}
+
+function printKoli(nos){
+  withQR(function(){
+    var n = buildLabels(nos);
+    if(!n){ toast('Tidak ada label untuk dicetak'); return; }
+    setTimeout(function(){ window.print(); }, 150);
+  });
+}
+
+function withQR(cb){
+  if(typeof qrcode!=='undefined') return cb();
+  var s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+  s.onload=cb; s.onerror=function(){ cb(); };
+  document.head.appendChild(s);
+}
+
+/* ================= SCANNER ================= */
+function openScan(){
+  showEl('backScan');
+  var start = function(){
+    try{
+      state.scanner = new Html5Qrcode('reader');
+      state.scanner.start({facingMode:'environment'}, {fps:10, qrbox:{width:260, height:170}}, function(txt){
+        var hit = state.byBar[normCode(txt)] || state.byKode[normCode(txt)];
+        if(hit){
+          if(state._last===txt && Date.now()-state._lastT<1500) return;
+          state._last=txt; state._lastT=Date.now();
+          closeScan(); askQty(hit);
+        }
+      }, function(){});
+    }catch(e){ toast('Kamera gagal: '+e.message, 3000); }
+  };
+  if(typeof Html5Qrcode==='undefined'){
+    var s=document.createElement('script');
+    s.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+    s.onload=start; s.onerror=function(){ toast('Gagal memuat pustaka kamera'); };
+    document.head.appendChild(s);
+  } else start();
+}
+function closeScan(){
+  hide('backScan');
+  if(state.scanner){
+    try{ state.scanner.stop().then(function(){ state.scanner.clear(); state.scanner=null; }); }
+    catch(e){ state.scanner=null; }
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
