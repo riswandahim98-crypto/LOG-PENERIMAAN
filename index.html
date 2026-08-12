@@ -364,12 +364,14 @@ var DEFAULT_PICS = [
   {nama:'Rifaldi Sulaeman', pin:'1241'},   {nama:'Muhamad Wira Yuda', pin:'1246'}
 ];
 var KIRIMAN_WAJIB = true;  // tiap koli harus menempel ke satu kiriman (vendor + no surat jalan)
-var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1', kiriman:'tk_kiriman'};
+var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1',
+          kiriman:'tk_kiriman', pending:'tk_pending'};
 
 var state = {
   exec:'', user:'', pics:[], vendors:[], master:[], byBar:{}, byKode:{},
   koli:[], items:{}, sel:{}, outUrl:'', scanner:null, pend:null, screen:'buat',
-  kirimanList:[], kiriman:null, sesiNo:'', editNo:null, editFoto:'', sDay:''
+  kirimanList:[], kiriman:null, sesiNo:'', editNo:null, editFoto:'', sDay:'',
+  pending:{}, tmpSeq:0
 };
 
 /* ================= UTIL ================= */
@@ -389,11 +391,12 @@ function num(v){ var n=Number(v); return isNaN(n)?0:n; }
 /* ================= BACKEND ================= */
 function postExec(payload, tries, timeoutMs){
   tries = tries||3;
-  // master/list = payload besar (±1 MB, backend bisa 20 detik) → beri waktu lebih panjang
-  timeoutMs = timeoutMs || ((payload.action==='master'||payload.action==='list') ? 90000 : 25000);
+  // master/list/boot = payload besar → beri waktu lebih panjang
+  timeoutMs = timeoutMs || ((payload.action==='master'||payload.action==='list'||payload.action==='boot') ? 90000 : 25000);
   var attempt = function(n){
     var ctl = new AbortController();
     var to = setTimeout(function(){ ctl.abort(); }, timeoutMs);
+    payload.attempt = n;   // backend hanya mengecek file dobel saat kiriman ulang → simpan pertama lebih cepat
     return fetch(state.exec, {
       method:'POST', body:JSON.stringify(payload),
       headers:{'Content-Type':'text/plain;charset=utf-8'}, signal:ctl.signal, redirect:'follow'
@@ -456,22 +459,26 @@ function saveExec(){
 
 function afterExec(){
   hideAll();
-  postExec({action:'meta'}).then(function(o){
+  // SATU permintaan untuk config + PIC + vendor + sesi + koli (tiap panggilan ke Apps Script
+  // memakan ±2,5 detik biaya tetap, jadi jangan dipecah-pecah)
+  postExec({action:'boot'}, 2).then(function(o){
     state.pics = (o.pics && o.pics.length) ? o.pics : DEFAULT_PICS;
     state.vendors = o.vendors||[];
+    state.outUrl = o.out||state.outUrl;
+    state.kirimanList = (o.kiriman||[]).slice().reverse();
+    setKoliData(o);
     renderPicList();
+    if(state.screen) { renderKirChip(); renderKoli(); }
+    resumePending();
+    if(FOTO_WAJIB && !(o.features && o.features.photo)){
+      state.oldBackend = true;
+      setTimeout(function(){ toast('⚠️ Apps Script belum diperbarui — fitur baru belum aktif. Minta admin paste ulang Code.gs → New version.', 7000); }, 1200);
+    }
   }).catch(function(e){
     if(!state.pics.length) state.pics = DEFAULT_PICS;
     renderPicList();
+    toast('Gagal memuat data: '+e.message, 3500);
   });
-  // cek versi backend — kalau Apps Script belum di-update, foto tak akan tersimpan
-  postExec({action:'config'}, 1).then(function(o){
-    state.outUrl = o.out||state.outUrl;
-    if(FOTO_WAJIB && !(o.features && o.features.photo)){
-      state.oldBackend = true;
-      setTimeout(function(){ toast('⚠️ Apps Script belum diperbarui — foto belum akan tersimpan. Minta admin paste ulang Code.gs → New version.', 7000); }, 1500);
-    }
-  }).catch(function(){});
   loadMaster();
   if(state.user){ enterApp(); } else { showEl('scLogin'); }
 }
@@ -506,8 +513,7 @@ function logout(){
 
 function enterApp(){
   $('chipUser').textContent = '👤 '+(state.user.split(' ')[0]||state.user);
-  hideAll(); showEl('bottomBar'); show('sesi');
-  loadKiriman(); loadKoli(false);
+  hideAll(); showEl('bottomBar'); show('sesi');   // data sudah ikut di permintaan 'boot'
 }
 
 /* Layar bertingkat: Sesi kiriman → daftar Koli → isi Koli. 'riwayat' = tab label. */
@@ -595,14 +601,19 @@ function renderKoliList(){
     var its = state.items[x.no]||[];
     var prev = its.slice(0,2).map(function(i){ return esc(i.nama||i.kode)+' ×'+i.qty; }).join(', ');
     if(its.length>2) prev += ' +'+(its.length-2);
+    var sync = x.sync==='kirim' ? '<span class="badge">menyimpan…</span>'
+             : x.sync==='gagal' ? '<span class="badge void">gagal kirim</span>' : '';
+    var aksi = x.sync==='gagal'
+      ? '<button class="qbtn" onclick="event.stopPropagation();ulangKirim(\''+x.no+'\')" title="Kirim ulang">↻</button>'
+      : (x.sync==='kirim' ? ''
+        : '<button class="qbtn" onclick="event.stopPropagation();printKoli([\''+x.no+'\'])" title="Cetak label">🖨️</button>'+
+          '<button class="qbtn" onclick="event.stopPropagation();duplicateKoli(\''+x.no+'\')" title="Duplikat">🔁</button>');
     return '<div class="kcard'+(x.status==='BATAL'?' void':'')+'">'+
-      '<div class="b" onclick="openKoliEdit(\''+x.no+'\')">'+
+      '<div class="b" onclick="'+(x.sync==='kirim'?'':'openKoliEdit(\''+x.no+'\')')+'">'+
         '<div class="kno">'+esc(x.no)+' <span class="muted">'+(x.sku||its.length)+' SKU · '+(x.qty||0)+' qty</span>'+
-          (x.foto?' <span class="muted">📷</span>':'')+(x.status==='BATAL'?'<span class="badge void">BATAL</span>':'')+'</div>'+
+          (x.foto?' <span class="muted">📷</span>':'')+sync+(x.status==='BATAL'?'<span class="badge void">BATAL</span>':'')+'</div>'+
         '<div class="kmeta">'+(prev||'—')+'</div>'+
-      '</div>'+
-      '<button class="qbtn" onclick="event.stopPropagation();printKoli([\''+x.no+'\'])" title="Cetak label">🖨️</button>'+
-      '<button class="qbtn" onclick="event.stopPropagation();duplicateKoli(\''+x.no+'\')" title="Duplikat">🔁</button>'+
+      '</div>'+aksi+
     '</div>';
   }).join('');
   $('kkList').innerHTML = h || '<div class="muted">Belum ada koli di sesi ini. Tekan “Buat koli baru”.</div>';
@@ -803,11 +814,11 @@ function compressImg(file, cb){
   fr.onload = function(){
     var img = new Image();
     img.onload = function(){
-      var max=1280, w=img.width, h=img.height, r=Math.min(1, max/Math.max(w,h));
+      var max=1024, w=img.width, h=img.height, r=Math.min(1, max/Math.max(w,h));
       var c=document.createElement('canvas');
       c.width=Math.round(w*r); c.height=Math.round(h*r);
       c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-      try{ cb(c.toDataURL('image/jpeg',0.72)); }catch(e){ toast('Foto gagal diproses'); }
+      try{ cb(c.toDataURL('image/jpeg',0.68)); }catch(e){ toast('Foto gagal diproses'); }
     };
     img.onerror = function(){ toast('File bukan gambar'); };
     img.src = fr.result;
@@ -963,41 +974,100 @@ function submitKoli(){
     items: draft.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; })
   };
   try{ localStorage.setItem(LS.draft, JSON.stringify(draft)); }catch(e){}
-  var labelBtn = edit ? '💾 Simpan perubahan' : '✅ Simpan Koli';
-  postExec(payload, 3, draft.photos.length ? 120000 : 25000).then(function(o){
-    btn.disabled=false; btn.textContent=labelBtn;
-    if(!o.ok) throw new Error(o.error||'gagal');
-    var no = o.no || state.editNo;
-    var items = draft.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; });
-    var qty = items.reduce(function(a,b){ return a+num(b.qty); }, 0);
-    var kol = state.koli.filter(function(x){ return x.no===no; })[0];
-    if(kol){
-      kol.sku=items.length; kol.qty=qty; kol.catatan=draft.catatan;
-      if(o.foto) kol.foto = o.foto;
-    } else {
-      kol = {no:no, tanggal:draft.tanggal, vendor:o.vendor||(state.kiriman&&state.kiriman.vendor)||'', pic:state.user,
-             sku:items.length, qty:qty, catatan:draft.catatan, status:'OK', foto:o.foto||'',
-             kiriman:o.kiriman||(state.kiriman&&state.kiriman.no)||'', sj:o.sj||(state.kiriman&&state.kiriman.sj)||''};
-      state.koli.unshift(kol);
+  // ==== SIMPAN DI LATAR ====
+  // Kartu koli langsung muncul, petugas boleh lanjut koli berikutnya tanpa menunggu server.
+  var items = draft.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; });
+  var qty = items.reduce(function(a,b){ return a+num(b.qty); }, 0);
+  var key = edit ? state.editNo : ('…'+(++state.tmpSeq));
+  var kol = state.koli.filter(function(x){ return x.no===key; })[0];
+  if(kol){
+    kol.sku=items.length; kol.qty=qty; kol.catatan=draft.catatan; kol.sync='kirim';
+  } else {
+    kol = {no:key, tanggal:draft.tanggal, vendor:(state.kiriman&&state.kiriman.vendor)||'', pic:state.user,
+           sku:items.length, qty:qty, catatan:draft.catatan, status:'OK', foto:'',
+           kiriman:(state.kiriman&&state.kiriman.no)||'', sj:(state.kiriman&&state.kiriman.sj)||'', sync:'kirim'};
+    state.koli.unshift(kol);
+  }
+  state.items[key] = items;
+  state.pending[key] = payload; savePending();
+  btn.disabled=false; btn.textContent = edit ? '💾 Simpan perubahan' : '✅ Simpan Koli';
+  draft.cid = null; state.editNo = null; state.editFoto = '';
+  clearDraft(false);
+  show('koli');
+  kirimKoli(key, payload, edit);
+}
+
+/* antrean kirim disimpan di HP → app ditutup / mati saat mengirim, koli tidak hilang */
+function savePending(){
+  try{ localStorage.setItem(LS.pending, JSON.stringify(state.pending)); }
+  catch(e){ /* penuh (foto besar): antrean tetap jalan di memori */ }
+}
+
+function resumePending(){
+  var p={};
+  try{ p = JSON.parse(localStorage.getItem(LS.pending)||'{}'); }catch(e){}
+  var keys = Object.keys(p||{});
+  if(!keys.length) return;
+  keys.forEach(function(key){
+    var pay = p[key];
+    if(!pay) return;
+    state.pending[key] = pay;
+    if(pay.action==='submit' && !state.koli.filter(function(x){return x.no===key;}).length){
+      var its = (pay.items||[]).map(function(i){ return {kode:i.kode, nama:i.nama, satuan:i.satuan, qty:num(i.qty)}; });
+      var kir = state.kirimanList.filter(function(x){ return x.no===pay.kiriman; })[0]||{};
+      state.koli.unshift({no:key, tanggal:pay.tanggal, vendor:kir.vendor||'', pic:pay.pic, sku:its.length,
+        qty:its.reduce(function(a,b){return a+num(b.qty);},0), catatan:pay.catatan||'', status:'OK',
+        foto:'', kiriman:pay.kiriman||'', sj:kir.sj||'', sync:'kirim'});
+      state.items[key] = its;
     }
-    state.items[no] = items;
-    draft.cid = null; state.editNo = null; state.editFoto = '';
-    clearDraft(false);
-    show('koli');
-    if(edit) toast(no+' diperbarui — '+items.length+' SKU / '+qty+' qty', 2600);
-    else doneDialog(kol, payload.photos.length);
+    kirimKoli(key, pay, pay.action==='updatekoli');
+  });
+  toast('Melanjutkan '+keys.length+' koli yang belum terkirim…', 3000);
+}
+
+/* pengiriman sesungguhnya — berjalan di latar, aman diulang (clientId yang sama) */
+function kirimKoli(key, payload, edit){
+  var t0 = Date.now();
+  postExec(payload, 3, (payload.photos&&payload.photos.length) ? 120000 : 25000).then(function(o){
+    var dtk = ((Date.now()-t0)/1000).toFixed(1);
+    if(!o.ok) throw new Error(o.error||'gagal');
+    var no = o.no || key;
+    var kol = state.koli.filter(function(x){ return x.no===key; })[0];
+    if(kol){
+      kol.no = no; kol.sync = ''; kol.foto = o.foto||kol.foto;
+      kol.vendor = o.vendor||kol.vendor; kol.kiriman = o.kiriman||kol.kiriman; kol.sj = o.sj||kol.sj;
+      // kalau server mengembalikan nomor yang sudah ada (kiriman ulang) → buang kartu kembarnya
+      state.koli = state.koli.filter(function(x){ return x===kol || x.no!==no; });
+    }
+    if(key!==no){ state.items[no] = state.items[key]; delete state.items[key]; }
+    delete state.pending[key]; savePending();
+    if(state.screen==='koli') renderKoliList();
+    if(state.screen==='sesi') renderSesi();
+    toast((edit? no+' diperbarui' : no+' tersimpan')+' · '+dtk+' dtk');
   }).catch(function(e){
-    btn.disabled=false; btn.textContent=labelBtn;
-    alert('Gagal simpan: '+e.message+'\n\nData koli masih tersimpan di HP, coba simpan lagi.');
+    var kol = state.koli.filter(function(x){ return x.no===key; })[0];
+    if(kol){ kol.sync='gagal'; kol.err=e.message; }
+    if(state.screen==='koli') renderKoliList();
+    savePending();
+    toast('Gagal simpan: '+e.message+' — tekan ↻ di kartu koli', 4000);
   });
 }
 
-function doneDialog(k, nFoto){
+function ulangKirim(key){
+  var p = state.pending[key];
+  if(!p){ toast('Data kiriman ulang tidak ada, muat ulang dulu'); return; }
+  var kol = state.koli.filter(function(x){ return x.no===key; })[0];
+  if(kol){ kol.sync='kirim'; kol.err=''; }
+  renderKoliList();
+  kirimKoli(key, p, p.action==='updatekoli');
+}
+
+function doneDialog(k, nFoto, dtk){
   $('detBox').innerHTML =
-    '<div class="grab"></div><h3>✅ Koli tersimpan</h3>'+
+    '<div class="grab"></div><h3>✅ Koli tersimpan'+(dtk? ' <span class="muted">'+dtk+' dtk</span>':'')+'</h3>'+
     '<div style="font-size:26px;font-weight:800;letter-spacing:.5px;margin:6px 0">'+esc(k.no)+'</div>'+
     '<div class="muted">'+esc(k.vendor||'-')+' • '+dmy(k.tanggal)+' • '+esc(k.pic)+'<br>'+k.sku+' SKU • '+k.qty+' qty'+
-      (nFoto? ' • '+nFoto+' foto sedang dikirim':'')+'</div>'+
+      (nFoto? ' • '+nFoto+' foto':'')+'</div>'+
     '<div style="height:12px"></div>'+
     '<button class="btn" onclick="hide(\'backDet\');printKoli([\''+k.no+'\'])">🖨️ Cetak label koli ini</button>'+
     '<div style="height:8px"></div>'+
@@ -1033,15 +1103,21 @@ function duplicateKoli(no, senyap){
 }
 
 /* ================= RIWAYAT ================= */
+function setKoliData(o){
+  state.koli = (o.koli||[]).slice().reverse();
+  state.items = {};
+  (o.items||[]).forEach(function(r){
+    var no=r[0]; if(!state.items[no]) state.items[no]=[];
+    state.items[no].push({kode:r[1], nama:r[2], satuan:r[3], qty:num(r[4])});
+  });
+  fillFilters();
+}
+
 function loadKoli(showToast){
+  var belum = Object.keys(state.pending).length;
+  if(belum){ toast('Masih ada '+belum+' koli yang belum terkirim — tunggu dulu'); return Promise.resolve(); }
   return postExec({action:'list'}).then(function(o){
-    state.koli = (o.koli||[]).slice().reverse();
-    state.items = {};
-    (o.items||[]).forEach(function(r){
-      var no=r[0]; if(!state.items[no]) state.items[no]=[];
-      state.items[no].push({kode:r[1], nama:r[2], satuan:r[3], qty:num(r[4])});
-    });
-    fillFilters();
+    setKoliData(o);
     renderKoli(); renderKirChip();
     if(showToast) toast(state.koli.length+' koli dimuat');
   }).catch(function(e){ if(showToast) toast('Gagal memuat: '+e.message, 3200); });
