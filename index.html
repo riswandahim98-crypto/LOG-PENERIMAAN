@@ -99,6 +99,11 @@ textarea{min-height:56px;resize:vertical}
 .kirrow .n{font-weight:600;font-size:14px}
 .kirrow .m{font-size:11.5px;color:var(--tx2)}
 
+.pickwrap{max-height:132px;overflow:auto;border:1px solid var(--line);border-radius:11px;padding:7px 7px 2px;background:var(--card2)}
+.pickwrap.short{max-height:88px}
+.rgrp{margin-bottom:2px}
+.prev{margin:10px 0;padding:9px 11px;background:var(--card2);border-radius:11px;font-size:14px}
+
 .thumbs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1}
 .thumbs img{width:40px;height:40px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer}
 .thumbs .ph{font-size:11.5px;color:var(--tx2)}
@@ -166,11 +171,28 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 .ltab td{font-size:8.5pt;padding:.7mm 0;vertical-align:top;border-bottom:.15mm dotted #999;line-height:1.15}
 .ltab td.q,.ltab th.q{text-align:right;width:18mm;font-weight:bold;white-space:nowrap}
 .lfoot{margin-top:auto;padding-top:1.5mm;border-top:.3mm solid #000;font-size:8pt;display:flex;justify-content:space-between}
+/* label QR Master Rack 60×40 mm */
+.qrlabel{width:60mm;height:40mm;padding:2.5mm;box-sizing:border-box;background:#fff;color:#000;
+  font-family:Arial,Helvetica,sans-serif;display:flex;gap:2mm;align-items:center;overflow:hidden;
+  page-break-after:always;break-after:page}
+.qrlabel:last-child{page-break-after:auto;break-after:auto}
+.qrlabel .qi{width:22mm;height:22mm;flex:none}
+.qrlabel .qi svg{width:22mm;height:22mm;display:block}
+.qrlabel .qt{flex:1;min-width:0}
+.qrlabel .qk{font-size:8pt;font-weight:bold;word-break:break-all;line-height:1.1}
+.qrlabel .qn{font-size:7pt;line-height:1.15;margin-top:.8mm;max-height:12mm;overflow:hidden}
+.qrlabel .qa{font-size:10pt;font-weight:bold;margin-top:1mm}
+/* daftar isi kardus level 6 (A4, 1 kardus per lembar) */
+.l6box{page-break-after:always;break-after:page;font-family:Arial,Helvetica,sans-serif;color:#000;padding:6mm}
+.l6box:last-child{page-break-after:auto;break-after:auto}
+.l6tab{width:100%;border-collapse:collapse;font-size:11pt}
+.l6tab th,.l6tab td{border:.3mm solid #000;padding:1.5mm 2mm;text-align:left}
+.l6tab th:first-child,.l6tab td:first-child{width:12mm;text-align:center}
+
 @media print{
   body{background:#fff;padding:0}
   body>*{display:none!important}
   #printRoot{display:block!important}
-  @page{size:100mm 100mm;margin:0}
 }
 </style>
 </head>
@@ -237,7 +259,31 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <div class="muted">Scan koli saat barang dibawa dari bulk ke etalase</div></div>
     <span class="muted">›</span>
   </div>
+  <div class="menucard" onclick="pilihModul('rack')">
+    <div class="mi">🗺️</div>
+    <div class="mg"><div class="mt">Master Rack</div>
+      <div class="muted">Pendataan posisi barang di rak: rak · level · bin, stiker, cetak QR</div></div>
+    <span class="muted">›</span>
+  </div>
   <div class="card" id="menuStat"></div>
+</div>
+
+<!-- ============ MASTER RACK ============ -->
+<div class="wrap hide" id="scRack">
+  <div class="card">
+    <div class="row">
+      <input type="search" id="rQ" placeholder="🔍 Cari nama / kode, atau scan…" autocomplete="off">
+      <button class="btn sec sm" onclick="openScan(false,'rack')" title="Scan barcode">📷</button>
+    </div>
+    <div id="rFilter" style="margin-top:7px"></div>
+    <div class="muted" id="rInfo" style="margin-top:5px"></div>
+  </div>
+  <div class="card">
+    <div class="stat" id="rStat" style="margin-bottom:0"></div>
+  </div>
+  <div class="card">
+    <div id="rList"></div>
+  </div>
 </div>
 
 <!-- ============ GUDANG BULK ============ -->
@@ -373,6 +419,10 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   <div class="actbar hide" id="actRiw">
     <button class="btn" id="btnPrint" onclick="printSelected()">🖨️ Cetak Label</button>
   </div>
+  <div class="actbar hide" id="actRack">
+    <button class="btn sec" onclick="rackSummary()">📊 Ringkasan</button>
+    <button class="btn" onclick="rackPrintMenu()">🖨️ Cetak</button>
+  </div>
   <div class="actbar hide" id="actBulk">
     <button class="btn" onclick="newKoliBulk()">➕ Koli baru</button>
     <button class="btn sec" id="btnPrintBulk" onclick="printBulk()">🖨️ Cetak label</button>
@@ -421,6 +471,10 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   <div class="sheet" id="detBox"></div>
 </div>
 
+<div class="back hide" id="backRack" onclick="if(event.target===this)hide('backRack')">
+  <div class="sheet" id="rackBox"></div>
+</div>
+
 <div class="back hide" id="backMenu" onclick="if(event.target===this)hide('backMenu')">
   <div class="sheet">
     <div class="grab"></div>
@@ -440,6 +494,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 </div>
 
 <div class="toast" id="toast"></div>
+<style id="printStyle"></style>
 <div id="printRoot"></div>
 
 <script>
@@ -456,14 +511,15 @@ var DEFAULT_PICS = [
 ];
 var KIRIMAN_WAJIB = true;  // tiap koli harus menempel ke satu kiriman (vendor + no surat jalan)
 var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1',
-          kiriman:'tk_kiriman', pending:'tk_pending'};
+          kiriman:'tk_kiriman', pending:'tk_pending', rack:'tk_rack_v1'};
 
 var state = {
   exec:'', user:'', pics:[], vendors:[], master:[], byBar:{}, byKode:{},
   koli:[], items:{}, sel:{}, outUrl:'', scanner:null, pend:null, screen:'buat',
   kirimanList:[], kiriman:null, sesiNo:'', editNo:null, editFoto:'', sDay:'',
   pending:{}, tmpSeq:0,
-  modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null
+  modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null,
+  rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item'
 };
 
 /* ================= UTIL ================= */
@@ -612,7 +668,8 @@ function enterApp(){
 /* Layar: menu → (penerimaan: sesi → koli → isi koli | bulk: daftar → isi koli | ambil: scan) */
 function show(which){
   state.screen = which;
-  var map = {menu:'scMenu', sesi:'scSesi', koli:'scKoli', buat:'scBuat', riwayat:'scRiwayat', bulk:'scBulk', ambil:'scAmbil'};
+  var map = {menu:'scMenu', sesi:'scSesi', koli:'scKoli', buat:'scBuat', riwayat:'scRiwayat',
+             bulk:'scBulk', ambil:'scAmbil', rack:'scRack'};
   for(var k in map) $(map[k]).classList.toggle('hide', k!==which);
   var bulkMode = (state.modul==='bulk');
   $('actSesi').classList.toggle('hide', which!=='sesi');
@@ -620,6 +677,7 @@ function show(which){
   $('actBuat').classList.toggle('hide', which!=='buat');
   $('actRiw').classList.toggle('hide', which!=='riwayat');
   $('actBulk').classList.toggle('hide', which!=='bulk');
+  $('actRack').classList.toggle('hide', which!=='rack');
   $('bottomBar').classList.toggle('hide', which==='menu');
   $('tabsPenerimaan').classList.toggle('hide', state.modul!=='penerimaan');
   $('tabsLain').classList.toggle('hide', state.modul==='penerimaan');
@@ -632,12 +690,14 @@ function show(which){
     : which==='koli' ? 'Sesi '+(state.kiriman? state.kiriman.vendor : '')
     : which==='buat' ? (state.editNo? 'Edit '+state.editNo : (bulkMode? 'Koli bulk baru' : 'Koli baru'))
     : which==='bulk' ? '🏬 Gudang Bulk'
-    : which==='ambil' ? '📤 Transaksi Bulk' : '🖨️ Label';
+    : which==='ambil' ? '📤 Transaksi Bulk'
+    : which==='rack' ? '🗺️ Master Rack' : '🖨️ Label';
   if(which==='menu'){ renderMenu(); }
   if(which==='sesi'){ renderSesi(); }
   if(which==='koli'){ renderKoliList(); }
   if(which==='bulk'){ renderBulk(); }
   if(which==='ambil'){ renderAmbilLog(); setTimeout(function(){ $('aQ').focus(); }, 60); }
+  if(which==='rack'){ if(!state.rack.length) loadRack(); else renderRack(); setTimeout(function(){ $('rQ').focus(); }, 60); }
   if(which==='riwayat'){ if(!state.koli.length) loadKoli(true); else renderKoli(); }
   if(which==='buat') setTimeout(function(){ $('q').focus(); }, 60);
 }
@@ -657,6 +717,7 @@ function pilihModul(m){
   state.modul = m;
   if(m==='penerimaan') show('sesi');
   else if(m==='bulk') show('bulk');
+  else if(m==='rack') show('rack');
   else show('ambil');
 }
 
@@ -744,6 +805,278 @@ function renderKoliList(){
   }).join('');
   $('kkList').innerHTML = h || '<div class="muted">Belum ada koli di sesi ini. Tekan “Buat koli baru”.</div>';
   $('kkCount').textContent = ks.length? '· '+ks.length : '';
+}
+
+/* ================= MODUL 4: MASTER RACK ================= */
+function loadRack(){
+  var c=null;
+  try{ c = JSON.parse(localStorage.getItem(LS.rack)||'null'); }catch(e){}
+  if(c && c.rows && c.rows.length){ setRack(c.rows, c.config); $('rInfo').textContent = state.rack.length+' item (tersimpan) — menyegarkan…'; }
+  else $('rInfo').textContent = 'Memuat data rak…';
+  return postExec({action:'rack'}, 2, 90000).then(function(o){
+    var rows = (o.rack&&o.rack.rows)||[];
+    if(!rows.length){ $('rInfo').textContent = state.rack.length? state.rack.length+' item (tersimpan)' : 'Data rak kosong'; return; }
+    setRack(rows, o.config);
+    try{ localStorage.setItem(LS.rack, JSON.stringify({t:Date.now(), rows:rows, config:o.config})); }catch(e){}
+    $('rInfo').textContent = state.rack.length+' item siap';
+    renderRack();
+  }).catch(function(e){
+    $('rInfo').innerHTML = state.rack.length? state.rack.length+' item (tersimpan di HP)' : '<span class="err">Gagal memuat: '+esc(e.message)+'</span>';
+  });
+}
+
+function setRack(rows, config){
+  // [kode,nama,kategori,brand,rack,level,bin,alamat,status,petugas,waktu,penyimpanan,sticker,excode,row]
+  state.rack = rows.map(function(r,i){
+    var o = {kode:r[0], nama:r[1], kategori:r[2], brand:r[3], rack:r[4], level:String(r[5]||''), bin:String(r[6]||''),
+             alamat:r[7], status:r[8], petugas:r[9], waktu:r[10], penyimpanan:r[11], sticker:r[12], excode:r[13], row:r[14], i:i};
+    o._h = norm(o.kode+' '+o.nama+' '+o.brand+' '+o.kategori+' '+o.alamat+' '+o.excode);
+    return o;
+  });
+  state.rackByKode = {};
+  state.rack.forEach(function(o){ if(o.kode) state.rackByKode[normCode(o.kode)] = o; });
+  if(config) state.rackCfg = config;
+  renderRack();
+}
+
+function rackDone(o){ return !!(o.alamat && String(o.status||'').toUpperCase()==='DONE'); }
+function rackKardus(o){ return String(o.level)==='6'; }              // level 6 = kardus, tanpa stiker
+function rackPerluStiker(o){ return rackDone(o) && !rackKardus(o) && String(o.sticker||'')!=='Sudah'; }
+
+function renderRack(){
+  if(!$('rList')) return;
+  var f = state.rFilter||'', q = norm($('rQ').value||'');
+  var toks = q? q.split(' ').filter(Boolean) : [];
+  var semua = state.rack;
+  var done = semua.filter(rackDone).length;
+  var stik = semua.filter(rackPerluStiker).length;
+  $('rStat').innerHTML = '<div><b>'+semua.length+'</b><s>item</s></div>'+
+    '<div><b>'+done+'</b><s>sudah dirak</s></div>'+
+    '<div><b>'+(semua.length-done)+'</b><s>belum</s></div>'+
+    '<div><b>'+stik+'</b><s>belum distiker</s></div>';
+  $('rFilter').innerHTML = [['','Semua'],['belum','Belum'],['done','Sudah dirak'],['stik','Stiker ✗']].map(function(x){
+    return '<span class="pill'+(f===x[0]?' on':'')+'" onclick="setRFilter(\''+x[0]+'\')">'+x[1]+'</span>';
+  }).join('');
+
+  var list = semua.filter(function(o){
+    if(f==='belum' && rackDone(o)) return false;
+    if(f==='done' && !rackDone(o)) return false;
+    if(f==='stik' && !rackPerluStiker(o)) return false;
+    if(toks.length){ for(var t=0;t<toks.length;t++) if(o._h.indexOf(toks[t])<0) return false; }
+    return true;
+  });
+  var h = list.slice(0,200).map(function(o){
+    var badge = rackDone(o)
+      ? '<span class="bstat b-ada">'+esc(o.alamat)+'</span>'+(rackPerluStiker(o)?'<span class="bstat b-seb">stiker ✗</span>':'')
+      : '<span class="bstat b-hab">belum</span>';
+    return '<div class="it" onclick="openRackEdit('+o.i+')">'+
+      '<div class="n">'+hl(o.nama, toks)+' '+badge+'</div>'+
+      '<div class="m">'+hl(o.kode, toks)+(o.brand?' • '+esc(o.brand):'')+(o.petugas?' • 👤 '+esc(o.petugas):'')+'</div></div>';
+  }).join('');
+  $('rList').innerHTML = h || '<div class="muted">Tidak ada item yang cocok.</div>';
+}
+function setRFilter(f){ state.rFilter=f; renderRack(); }
+
+/* ---------- editor posisi rak ---------- */
+function openRackEdit(i){
+  var o = state.rack[i]; if(!o) return;
+  state.rackEdit = {i:i, rack:o.rack||'', level:String(o.level||''), bin:String(o.bin||''), sticker:o.sticker||'', revisi:false};
+  renderRackEdit();
+  showEl('backRack');
+}
+
+function rackChips(){
+  var cfg = state.rackCfg||{racks:[],levels:6,bins:7};
+  var e = state.rackEdit;
+  var grup = {};
+  (cfg.racks||[]).forEach(function(r){ var n=r.replace(/[A-Z]/g,''); (grup[n]=grup[n]||[]).push(r); });
+  var rakHTML = Object.keys(grup).sort(function(a,b){return a-b;}).map(function(n){
+    return '<div class="rgrp">'+grup[n].map(function(r){
+      return '<span class="pill'+(e.rack===r?' on':'')+'" onclick="rackPick(\'rack\',\''+r+'\')">'+r+'</span>';
+    }).join('')+'</div>';
+  }).join('');
+  var lvl = ''; for(var l=1;l<=(cfg.levels||6);l++) lvl += '<span class="pill'+(e.level===String(l)?' on':'')+'" onclick="rackPick(\'level\',\''+l+'\')">'+l+(l===6?' (kardus)':'')+'</span>';
+  var kardus = String(e.level)==='6';
+  var maxBin = kardus ? Math.max(12, num(e.bin)) : (cfg.bins||7);
+  var bins = ''; for(var b=1;b<=maxBin;b++) bins += '<span class="pill'+(e.bin===String(b)?' on':'')+'" onclick="rackPick(\'bin\',\''+b+'\')">'+b+'</span>';
+  if(kardus) bins += '<span class="pill" onclick="rackTambahKardus()">＋</span>';
+  return {rak:rakHTML, level:lvl, bin:bins, kardus:kardus};
+}
+
+function renderRackEdit(){
+  var e = state.rackEdit; if(!e) return;
+  var o = state.rack[e.i];
+  var c = rackChips();
+  var lengkap = e.rack && e.level && e.bin;
+  var alamat = lengkap ? (e.rack+'-'+e.level+'-'+e.bin) : '—';
+  var sudah = rackDone(o);
+  $('rackBox').innerHTML = '<div class="grab"></div>'+
+    '<h3>'+esc(o.nama||o.kode)+'</h3>'+
+    '<div class="muted">'+esc(o.kode)+(o.brand?' • '+esc(o.brand):'')+(o.penyimpanan?' • '+esc(o.penyimpanan):'')+
+      (sudah? '<br>Terakhir diisi oleh '+esc(o.petugas||'-')+(o.waktu?' • '+esc(o.waktu):'') : '')+'</div>'+
+    (sudah && !e.revisi
+      ? '<div style="margin:10px 0"><span class="bstat b-ada" style="font-size:14px;padding:6px 12px">'+esc(o.alamat)+'</span></div>'+
+        '<button class="btn" onclick="rackRevisi()">✏️ Revisi posisi</button>'+
+        '<div style="height:8px"></div>'+
+        (rackKardus(o)? '' :
+          '<label class="lb">Stiker sudah ditempel?</label>'+
+          '<span class="pill'+(o.sticker==='Sudah'?' on':'')+'" onclick="rackStikerCepat(\'Sudah\')">Sudah</span>'+
+          '<span class="pill'+(o.sticker==='Belum'?' on':'')+'" onclick="rackStikerCepat(\'Belum\')">Belum</span>'+
+          '<div style="height:10px"></div>')+
+        '<button class="btn sec" onclick="hide(\'backRack\')">Tutup</button>'
+      : '<label class="lb">Rak</label><div class="pickwrap">'+c.rak+'</div>'+
+        '<label class="lb">Level</label><div>'+c.level+'</div>'+
+        '<label class="lb">'+(c.kardus?'Kardus ke-':'Bin')+'</label><div class="pickwrap short">'+c.bin+'</div>'+
+        (c.kardus? '' :
+          '<label class="lb">Stiker sudah ditempel?</label>'+
+          '<span class="pill'+(e.sticker==='Sudah'?' on':'')+'" onclick="rackPick(\'sticker\',\'Sudah\')">Sudah</span>'+
+          '<span class="pill'+(e.sticker==='Belum'?' on':'')+'" onclick="rackPick(\'sticker\',\'Belum\')">Belum</span>')+
+        '<div class="prev">Alamat: <b>'+esc(alamat)+'</b></div>'+
+        (e.revisi? '<button class="btn" onclick="rackSimpan()">💾 Simpan perubahan</button><div style="height:8px"></div>':'')+
+        '<button class="btn sec" onclick="hide(\'backRack\')">Tutup</button>'+
+        '<div style="height:6px"></div>'+
+        '<button class="lnk" onclick="rackKosongkan()">Kosongkan posisi item ini</button>');
+}
+
+function rackPick(k,v){
+  var e=state.rackEdit; if(!e) return;
+  e[k] = (e[k]===v) ? '' : v;
+  if(k==='level'){ e.bin=''; if(v==='6') e.sticker=''; }
+  renderRackEdit();
+  if(!e.revisi) rackAutoSimpan();
+}
+function rackTambahKardus(){ var e=state.rackEdit; e.bin=String(num(e.bin)+0); e._maxKardus=(e._maxKardus||12)+6; renderRackEdit(); }
+
+/* auto-simpan begitu rak+level+bin (+stiker utk non-kardus) terisi */
+function rackAutoSimpan(){
+  var e=state.rackEdit; if(!e) return;
+  var kardus = String(e.level)==='6';
+  if(!e.rack || !e.level || !e.bin) return;
+  if(!kardus && !e.sticker) return;
+  rackSimpan();
+}
+
+function rackSimpan(){
+  var e=state.rackEdit; if(!e) return;
+  var o=state.rack[e.i];
+  var kardus = String(e.level)==='6';
+  var payload = {action:'rackupdate', kode:o.kode, row:o.row, rack:e.rack, level:e.level, bin:e.bin,
+                 sticker: kardus? '' : e.sticker, pic:state.user};
+  var lama = {rack:o.rack, level:o.level, bin:o.bin, alamat:o.alamat, status:o.status, petugas:o.petugas, waktu:o.waktu, sticker:o.sticker};
+  o.rack=e.rack; o.level=e.level; o.bin=e.bin; o.alamat=e.rack+'-'+e.level+'-'+e.bin;
+  o.status='DONE'; o.petugas=state.user; o.sticker= kardus? '' : e.sticker;
+  hide('backRack'); renderRack(); rackCacheSimpan();
+  toast(o.kode+' → '+o.alamat);
+  postExec(payload, 3, 25000).then(function(r){
+    if(!r.ok) throw new Error(r.error||'gagal');
+    o.waktu = r.waktu||o.waktu; rackCacheSimpan();
+  }).catch(function(err){
+    for(var k in lama) o[k]=lama[k];
+    renderRack(); rackCacheSimpan();
+    toast('Gagal simpan posisi: '+err.message, 4000);
+  });
+}
+
+function rackStikerCepat(v){
+  var e=state.rackEdit, o=state.rack[e.i];
+  e.sticker=v; e.rack=o.rack; e.level=o.level; e.bin=o.bin;
+  rackSimpan();
+}
+
+function rackRevisi(){ state.rackEdit.revisi = true; renderRackEdit(); }
+
+function rackKosongkan(){
+  var e=state.rackEdit, o=state.rack[e.i];
+  if(!confirm('Kosongkan posisi '+o.kode+'?')) return;
+  var lama = {rack:o.rack, level:o.level, bin:o.bin, alamat:o.alamat, status:o.status, petugas:o.petugas, sticker:o.sticker};
+  o.rack=''; o.level=''; o.bin=''; o.alamat=''; o.status=''; o.petugas=''; o.sticker='';
+  hide('backRack'); renderRack(); rackCacheSimpan();
+  postExec({action:'rackupdate', kode:o.kode, row:o.row, clear:1}, 3, 25000).catch(function(err){
+    for(var k in lama) o[k]=lama[k]; renderRack(); rackCacheSimpan();
+    toast('Gagal mengosongkan: '+err.message, 4000);
+  });
+}
+
+function rackCacheSimpan(){
+  try{
+    var rows = state.rack.map(function(o){
+      return [o.kode,o.nama,o.kategori,o.brand,o.rack,o.level,o.bin,o.alamat,o.status,o.petugas,o.waktu,o.penyimpanan,o.sticker,o.excode,o.row];
+    });
+    localStorage.setItem(LS.rack, JSON.stringify({t:Date.now(), rows:rows, config:state.rackCfg}));
+  }catch(e){}
+}
+
+/* ---------- ringkasan ---------- */
+function rackSummary(){
+  var semua = state.rack, done = semua.filter(rackDone);
+  var perPetugas = {}, perBin = {}, perRak = {};
+  done.forEach(function(o){
+    perPetugas[o.petugas||'(tanpa nama)'] = (perPetugas[o.petugas||'(tanpa nama)']||0)+1;
+    perBin[o.alamat] = (perBin[o.alamat]||0)+1;
+    perRak[o.rack] = (perRak[o.rack]||0)+1;
+  });
+  var isi2 = Object.keys(perBin).filter(function(a){ return perBin[a]>1; });
+  var cfg = state.rackCfg||{racks:[],levels:6,bins:7};
+  var slot = (cfg.racks||[]).length * (cfg.levels||6) * (cfg.bins||7);
+  var baris = function(obj){
+    return Object.keys(obj).sort(function(a,b){ return obj[b]-obj[a]; }).slice(0,20)
+      .map(function(k){ return '<tr><td>'+esc(k)+'</td><td class="q">'+obj[k]+'</td></tr>'; }).join('');
+  };
+  $('detBox').innerHTML = '<div class="grab"></div><h3>📊 Ringkasan Master Rack</h3>'+
+    '<div class="stat"><div><b>'+semua.length+'</b><s>item</s></div><div><b>'+done.length+'</b><s>sudah dirak</s></div>'+
+      '<div><b>'+Object.keys(perBin).length+'</b><s>bin terpakai</s></div><div><b>'+(slot-Object.keys(perBin).length)+'</b><s>bin kosong</s></div></div>'+
+    '<label class="lb">👥 Per petugas</label><table class="dt">'+baris(perPetugas)+'</table>'+
+    '<label class="lb">📦 Bin berisi lebih dari 1 SKU ('+isi2.length+')</label>'+
+    '<table class="dt">'+isi2.slice(0,20).map(function(a){ return '<tr><td>'+esc(a)+'</td><td class="q">'+perBin[a]+' SKU</td></tr>'; }).join('')+'</table>'+
+    '<label class="lb">🗄️ Per rak</label><table class="dt">'+baris(perRak)+'</table>'+
+    '<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+  showEl('backDet');
+}
+
+/* ---------- cetak ---------- */
+function rackPrintMenu(){
+  var qr = state.rack.filter(rackPerluStiker);
+  var petugas = {}; qr.forEach(function(o){ petugas[o.petugas||'(tanpa nama)'] = (petugas[o.petugas||'(tanpa nama)']||0)+1; });
+  var l6 = state.rack.filter(function(o){ return rackDone(o) && rackKardus(o); });
+  $('detBox').innerHTML = '<div class="grab"></div><h3>🖨️ Cetak Master Rack</h3>'+
+    '<div class="muted">Label QR 60×40 mm untuk item yang sudah dirak tapi belum distiker.</div>'+
+    '<div style="height:8px"></div>'+
+    '<button class="btn" onclick="hide(\'backDet\');printRackQR(\'\')">🏷️ Cetak QR semua ('+qr.length+')</button>'+
+    '<div style="height:8px"></div>'+
+    Object.keys(petugas).sort().map(function(p){
+      return '<button class="btn sec" style="margin-bottom:6px" onclick="hide(\'backDet\');printRackQR(\''+p.replace(/'/g,"\\'")+'\')">👤 '+esc(p)+' ('+petugas[p]+')</button>';
+    }).join('')+
+    '<div style="height:6px"></div>'+
+    '<button class="btn sec" onclick="hide(\'backDet\');printKardus()">📦 Daftar isi kardus level 6 ('+l6.length+' item)</button>'+
+    '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+  showEl('backDet');
+}
+
+function printRackQR(petugas){
+  var list = state.rack.filter(rackPerluStiker).filter(function(o){ return !petugas || (o.petugas||'(tanpa nama)')===petugas; });
+  if(!list.length){ toast('Tidak ada item untuk dicetak'); return; }
+  withQR(function(){
+    var h = list.map(function(o){
+      return '<div class="qrlabel"><div class="qi">'+qrSvg(o.kode)+'</div>'+
+        '<div class="qt"><div class="qk">'+esc(o.kode)+'</div><div class="qn">'+esc(o.nama)+'</div>'+
+        '<div class="qa">'+esc(o.alamat)+'</div></div></div>';
+    }).join('');
+    cetak(h, '60mm 40mm');
+  });
+}
+
+function printKardus(){
+  var l6 = state.rack.filter(function(o){ return rackDone(o) && rackKardus(o); });
+  if(!l6.length){ toast('Belum ada item di level 6'); return; }
+  var grup = {};
+  l6.forEach(function(o){ var k=o.rack+' — Kardus '+o.bin; (grup[k]=grup[k]||[]).push(o); });
+  var h = Object.keys(grup).sort().map(function(k){
+    return '<div class="l6box"><h2 style="margin:0 0 4mm">'+esc(k)+'</h2>'+
+      '<table class="l6tab"><thead><tr><th>No</th><th>Kode</th><th>Nama Barang</th></tr></thead><tbody>'+
+      grup[k].map(function(o,i){ return '<tr><td>'+(i+1)+'</td><td>'+esc(o.kode)+'</td><td>'+esc(o.nama)+'</td></tr>'; }).join('')+
+      '</tbody></table></div>';
+  }).join('');
+  cetak(h, 'A4');
 }
 
 /* ---------- GUDANG BULK ---------- */
@@ -1009,7 +1342,7 @@ function openSheet(){
   hide('backMenu');
   $('detBox').innerHTML = '<div class="grab"></div><h3>📄 Google Sheet data</h3>'+
     '<div class="muted">Datanya dipisah per modul.</div><div style="height:10px"></div>'+
-    [['inbound','📥 Log Penerimaan (inbound)'],['bulk','🏬 Pendataan Gudang Bulk'],['trx','📤 Log Book Transaksi Bulk']]
+    [['inbound','📥 Log Penerimaan (inbound)'],['bulk','🏬 Pendataan Gudang Bulk'],['trx','📤 Log Book Transaksi Bulk (tab di dokumen bulk)']]
       .map(function(x){
         return s[x[0]] ? '<a class="btn sec" style="display:block;text-align:center;margin-bottom:8px;text-decoration:none" target="_blank" href="'+esc(s[x[0]])+'">'+x[1]+'</a>'
                        : '<div class="muted" style="margin-bottom:8px">'+x[1]+' — belum terbentuk</div>';
@@ -1075,6 +1408,15 @@ function bindSearch(){
   var t=null;
   $('aQ').addEventListener('keydown', function(e){
     if(e.key==='Enter'){ e.preventDefault(); cariKoliAmbil(); }
+  });
+  var tr=null;
+  $('rQ').addEventListener('input', function(){ clearTimeout(tr); tr=setTimeout(renderRack,110); });
+  $('rQ').addEventListener('keydown', function(e){
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    var v=$('rQ').value.trim();
+    var it = state.rackByKode[normCode(v)];        // scanner fisik → langsung buka editornya
+    if(it){ $('rQ').value=''; renderRack(); openRackEdit(it.i); }
   });
   $('q').addEventListener('input', function(){ clearTimeout(t); t=setTimeout(runSearch,110); });
   $('q').addEventListener('keydown', function(e){
@@ -1715,11 +2057,18 @@ function buildLabels(nos){
   return root.children.length;
 }
 
+/* satu pintu untuk semua pencetakan — ukuran kertas disetel sesuai jenis labelnya */
+function cetak(html, ukuran){
+  $('printStyle').textContent = '@media print{ @page{ size:'+ukuran+'; margin:'+(ukuran==='A4'?'8mm':'0')+'; } }';
+  if(html!=null) $('printRoot').innerHTML = html;
+  setTimeout(function(){ window.print(); }, 150);
+}
+
 function printKoli(nos){
   withQR(function(){
     var n = buildLabels(nos);
     if(!n){ toast('Tidak ada label untuk dicetak'); return; }
-    setTimeout(function(){ window.print(); }, 150);
+    cetak(null, '100mm 100mm');
   });
 }
 
@@ -1732,9 +2081,10 @@ function withQR(cb){
 }
 
 /* ================= SCANNER ================= */
-function openScan(modeKoli){
+function openScan(modeKoli, target){
   showEl('backScan');
   state.scanKoli = !!modeKoli;
+  state.scanTarget = target||'item';
   var start = function(){
     try{
       state.scanner = new Html5Qrcode('reader');
@@ -1743,6 +2093,14 @@ function openScan(modeKoli){
         if(state.scanKoli){                       // scan QR label koli → buka isinya untuk diambil
           state._last=txt; state._lastT=Date.now();
           closeScan(); $('aQ').value = String(txt).trim(); cariKoliAmbil();
+          return;
+        }
+        if(state.scanTarget==='rack'){            // scan barcode item → buka editor posisi rak
+          var it = state.rackByKode[normCode(txt)];
+          state._last=txt; state._lastT=Date.now();
+          closeScan();
+          if(it) openRackEdit(it.i);
+          else { $('rQ').value=String(txt).trim(); renderRack(); toast('Kode tidak ada di Master Rack'); }
           return;
         }
         var hit = state.byBar[normCode(txt)] || state.byKode[normCode(txt)];
