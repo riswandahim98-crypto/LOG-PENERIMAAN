@@ -330,7 +330,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   <div class="card">
     <div id="bMode"></div>
     <div class="row" style="margin-top:7px">
-      <input type="search" id="bQ" placeholder="🔍 Cari / scan barang…" autocomplete="off">
+      <input type="search" id="bQ" placeholder="🔍 Cari / scan barang untuk didata…" autocomplete="off">
       <button class="btn sec sm" onclick="openScan(false,'bulk')" title="Scan barcode">📷</button>
     </div>
     <div class="res" id="bRes"></div>
@@ -340,6 +340,12 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     <h2 id="bJudul">🏬 Bulk normal <span class="muted" id="bCount"></span><span class="sp2"></span>
       <button class="lnk" onclick="selAllBulk(true)">Pilih semua</button>
       <button class="lnk" onclick="selAllBulk(false)">Bersihkan</button></h2>
+    <!-- pencarian di dalam data yang SUDAH didata — untuk cepat menemukan SKU yang mau dicetak -->
+    <div class="row" style="margin-bottom:7px">
+      <input type="search" id="bFind" placeholder="🔎 Cari yang sudah didata (nama / kode / rak)…" autocomplete="off">
+      <button class="btn sec sm" id="bFindX" onclick="hapusCariBulk()" title="Bersihkan pencarian">✕</button>
+    </div>
+    <div id="bFindInfo"></div>
     <div id="bList"></div>
   </div>
 </div>
@@ -1403,23 +1409,31 @@ function renderBulk(){
   $('btnBulkTambah').textContent = mode==='normal' ? '➕ Tambah SKU' : '➕ Koli dead stock baru';
   $('bJudul').firstChild.nodeValue = mode==='normal' ? '📦 SKU di gudang bulk ' : '🧩 Koli dead stock ';
   bulkCari();
-  var q = norm($('bQ').value||''), f = state.bFilter||'';
+  // kotak atas (#bQ) = cari di MASTER untuk menambah; kotak ini = cari di data yang SUDAH didata
+  var q = norm(($('bFind') && $('bFind').value) || ''), f = state.bFilter||'';
+  var toks = q ? q.split(' ').filter(Boolean) : [];
+  var cocok = function(teks){
+    var t = norm(teks);
+    for(var i=0;i<toks.length;i++) if(t.indexOf(toks[i])<0) return false;
+    return true;
+  };
   var h='';
   if(mode==='normal'){
     var list = state.bn.filter(function(x){
       if(f==='ada' && num(x.sisa)<=0) return false;
       if(f==='habis' && num(x.sisa)>0) return false;
-      if(q && norm(x.kode+' '+x.nama).indexOf(q)<0) return false;
+      if(toks.length && !cocok(x.kode+' '+x.nama+' rak '+(x.rak||''))) return false;
       return true;
     });
     h = list.slice(0,300).map(function(x){
       var habis = num(x.sisa)<=0, id = bnId(x);
+      var tulis = function(s){ return toks.length ? hl(s, toks) : esc(s); };   // kata yang dicari ditandai
       return '<div class="kcard'+(state.sel[id]?' sel':'')+'" id="bc_'+esc(id)+'">'+
         '<input type="checkbox" class="ck" '+(state.sel[id]?'checked':'')+' onchange="toggleSelBulk(\''+esc(id)+'\',this.checked)">'+
         '<div class="b" onclick="editBN(\''+esc(id)+'\')">'+
-          '<div class="kno">'+esc(x.nama||x.kode)+' <span class="bstat '+(habis?'b-hab':'b-ada')+'">sisa '+num(x.sisa)+' dus</span>'+
-            '<span class="bstat b-seb">'+(x.rak? 'RAK '+esc(x.rak) : 'belum dirak')+'</span></div>'+
-          '<div class="kmeta">'+esc(x.kode)+' • '+num(x.dus)+' dus'+(num(x.isi)? ' @'+num(x.isi)+' '+esc(x.satuan||'pcs'):'')+
+          '<div class="kno">'+tulis(x.nama||x.kode)+' <span class="bstat '+(habis?'b-hab':'b-ada')+'">sisa '+num(x.sisa)+' dus</span>'+
+            '<span class="bstat b-seb">'+(x.rak? 'RAK '+tulis(x.rak) : 'belum dirak')+'</span></div>'+
+          '<div class="kmeta">'+tulis(x.kode)+' • '+num(x.dus)+' dus'+(num(x.isi)? ' @'+num(x.isi)+' '+esc(x.satuan||'pcs'):'')+
             (num(x.diambil)?' • '+num(x.diambil)+' diambil':'')+'</div>'+
         '</div>'+
         '<button class="qbtn" onclick="event.stopPropagation();pindahRak(\''+esc(id)+'\')" title="Pindah rak">↔️</button>'+
@@ -1432,9 +1446,9 @@ function renderBulk(){
     var ls = state.ds.filter(function(x){
       if(f==='ada' && x.isi==='HABIS') return false;
       if(f==='habis' && x.isi!=='HABIS') return false;
-      if(q){
-        var its=(state.dsItem[x.no]||[]).map(function(i){return norm(i.nama+' '+i.kode);}).join(' ');
-        if((norm(x.no+' '+(x.catatan||''))+' '+its).indexOf(q)<0) return false;
+      if(toks.length){
+        var its=(state.dsItem[x.no]||[]).map(function(i){return i.nama+' '+i.kode;}).join(' ');
+        if(!cocok(x.no+' '+(x.catatan||'')+' '+its)) return false;
       }
       return true;
     });
@@ -1456,11 +1470,40 @@ function renderBulk(){
     $('bCount').textContent = ls.length? '· '+ls.length+' koli' : '';
     state.bulkTampil = ls.map(function(x){ return x.no; });
   }
-  $('bList').innerHTML = h || '<div class="muted">Belum ada data. Tekan tombol tambah di bawah.</div>';
+  $('bList').innerHTML = h || (toks.length
+    ? '<div class="muted">Tidak ada yang cocok dengan “'+esc(q)+'”. Coba kata lain, atau kosongkan pencarian.</div>'
+    : '<div class="muted">Belum ada data. Tekan tombol tambah di bawah.</div>');
   $('bFilter').innerHTML = [['','Semua'],['ada','Masih ada'],['habis','Habis']].map(function(x){
     return '<span class="pill'+(f===x[0]?' on':'')+'" onclick="setBFilter(\''+x[0]+'\')">'+x[1]+'</span>';
   }).join('');
+  infoCariBulk(toks.length, (state.bulkTampil||[]).length);
   updatePrintBulk();
+}
+
+/* baris kecil di bawah kotak cari: berapa yang ketemu + pintasan pilih semua hasil */
+function infoCariBulk(adaCari, jml){
+  var el = $('bFindInfo'); if(!el) return;
+  var x = $('bFindX'); if(x) x.style.display = adaCari ? '' : 'none';
+  if(!adaCari){ el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="muted" style="margin:-2px 0 7px">'+
+    (jml? jml+' baris ketemu · <button class="lnk" onclick="selAllBulk(true)">Pilih semua hasil</button>'+
+          ' · <button class="lnk" onclick="cetakHasilCari()">🖨️ Cetak semua hasil</button>'
+        : 'tidak ada yang cocok')+'</div>';
+}
+function hapusCariBulk(){
+  if($('bFind')) $('bFind').value = '';
+  renderBulk();
+  if($('bFind')) $('bFind').focus();
+}
+/* cetak seluruh baris yang sedang tampil (hasil pencarian), tanpa perlu mencentang */
+function cetakHasilCari(){
+  var ids = (state.bulkTampil||[]).slice();
+  if(!ids.length){ toast('Tidak ada yang dicetak'); return; }
+  if((state.bMode||'normal')==='normal'){
+    cetakBulk(state.bn.filter(function(x){ return ids.indexOf(bnId(x))>=0; }));
+  } else {
+    selAllBulk(true); printBulk();
+  }
 }
 
 /* pencarian barang di layar bulk (untuk menambah data) */
@@ -1901,7 +1944,10 @@ function terpilihBulk(){
 function updatePrintBulk(){
   var n = terpilihBulk().length, tot = (state.bulkTampil||[]).length;
   var b = $('btnPrintBulk'); if(!b) return;
-  b.textContent = n ? ('🖨️ Cetak '+n+' label') : ('🖨️ Cetak semua ('+tot+')');
+  var adaCari = !!($('bFind') && $('bFind').value.trim());
+  // tanpa centang, yang dicetak = semua yang sedang tampil (ikut hasil pencarian)
+  b.textContent = n ? ('🖨️ Cetak '+n+' label')
+                    : ('🖨️ Cetak '+(adaCari? 'hasil cari' : 'semua')+' ('+tot+')');
 }
 
 
@@ -2288,6 +2334,10 @@ function bindSearch(){
   });
   var tb=null;
   $('bQ').addEventListener('input', function(){ clearTimeout(tb); tb=setTimeout(bulkCari,110); });
+  // pencarian di dalam data yang sudah didata (untuk cepat mencetak ulang)
+  var tf=null;
+  $('bFind').addEventListener('input', function(){ clearTimeout(tf); tf=setTimeout(renderBulk,110); });
+  $('bFind').addEventListener('keydown', function(e){ if(e.key==='Escape') hapusCariBulk(); });
   $('bQ').addEventListener('keydown', function(e){
     if(e.key!=='Enter') return;
     e.preventDefault();
