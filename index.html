@@ -344,8 +344,12 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <button class="lnk" onclick="selAllBulk(false)">Bersihkan</button></h2>
     <!-- pencarian di dalam data yang SUDAH didata — untuk cepat menemukan SKU yang mau dicetak -->
     <div class="row" style="margin-bottom:7px">
-      <input type="search" id="bFind" placeholder="🔎 Cari yang sudah didata (nama / kode / rak)…" autocomplete="off">
+      <input type="search" id="bFind" placeholder="🔎 Cari yang sudah didata (nama / kode)…" autocomplete="off">
       <button class="btn sec sm" id="bFindX" onclick="hapusCariBulk()" title="Bersihkan pencarian">✕</button>
+    </div>
+    <!-- pilih rak: langsung tampilkan semua SKU di satu rak (enak buat cetak per rak) -->
+    <div class="row" id="bRakRow" style="margin-bottom:7px">
+      <select id="bRak" onchange="setRakFilter(this.value)"></select>
     </div>
     <div id="bFindInfo"></div>
     <div id="bList"></div>
@@ -597,7 +601,7 @@ var state = {
   modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null,
   rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item',
   bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:'',
-  antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}
+  antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}, rakFilter:''
 };
 
 /* ================= UTIL ================= */
@@ -1419,11 +1423,17 @@ function renderBulk(){
     for(var i=0;i<toks.length;i++) if(t.indexOf(toks[i])<0) return false;
     return true;
   };
+  var rakPilih = state.rakFilter||'';
   var h='';
   if(mode==='normal'){
+    isiPilihanRak(rakPilih);
     var list = state.bn.filter(function(x){
       if(f==='ada' && num(x.sisa)<=0) return false;
       if(f==='habis' && num(x.sisa)>0) return false;
+      if(rakPilih){                                   // saring per rak (termasuk 'belum dirak')
+        var r = String(x.rak||'').trim().toUpperCase();
+        if(rakPilih==='(kosong)' ? r!=='' : r!==rakPilih) return false;
+      }
       if(toks.length && !cocok(x.kode+' '+x.nama+' rak '+(x.rak||''))) return false;
       return true;
     });
@@ -1478,22 +1488,50 @@ function renderBulk(){
   $('bFilter').innerHTML = [['','Semua'],['ada','Masih ada'],['habis','Habis']].map(function(x){
     return '<span class="pill'+(f===x[0]?' on':'')+'" onclick="setBFilter(\''+x[0]+'\')">'+x[1]+'</span>';
   }).join('');
-  infoCariBulk(toks.length, (state.bulkTampil||[]).length);
+  var rakRow = $('bRakRow'); if(rakRow) rakRow.style.display = (mode==='normal') ? '' : 'none';
+  infoCariBulk(toks.length || (mode==='normal' && rakPilih), (state.bulkTampil||[]).length, rakPilih);
   updatePrintBulk();
 }
 
+/* daftar rak diambil dari data yang sudah didata, diurutkan alami (1A, 1B, … 10A) */
+function isiPilihanRak(dipilih){
+  var sel = $('bRak'); if(!sel) return;
+  var hitung = {}, kosong = 0;
+  state.bn.forEach(function(x){
+    var r = String(x.rak||'').trim().toUpperCase();
+    if(!r){ kosong++; return; }
+    hitung[r] = (hitung[r]||0)+1;
+  });
+  var raks = Object.keys(hitung).sort(function(a,b){
+    var pa=/^(\d+)/.exec(a), pb=/^(\d+)/.exec(b);
+    if(pa&&pb && +pa[1]!==+pb[1]) return +pa[1]-+pb[1];
+    return a<b? -1 : (a>b? 1 : 0);
+  });
+  var opsi = '<option value="">🗄️ Semua rak ('+state.bn.length+' baris)</option>';
+  raks.forEach(function(r){
+    opsi += '<option value="'+esc(r)+'"'+(dipilih===r?' selected':'')+'>RAK '+esc(r)+' — '+hitung[r]+' SKU</option>';
+  });
+  if(kosong) opsi += '<option value="(kosong)"'+(dipilih==='(kosong)'?' selected':'')+'>Belum dirak — '+kosong+' SKU</option>';
+  if(sel.innerHTML !== opsi) sel.innerHTML = opsi;
+  sel.value = dipilih || '';
+}
+function setRakFilter(v){ state.rakFilter = v||''; renderBulk(); }
+
 /* baris kecil di bawah kotak cari: berapa yang ketemu + pintasan pilih semua hasil */
-function infoCariBulk(adaCari, jml){
+function infoCariBulk(adaCari, jml, rak){
   var el = $('bFindInfo'); if(!el) return;
   var x = $('bFindX'); if(x) x.style.display = adaCari ? '' : 'none';
   if(!adaCari){ el.innerHTML = ''; return; }
+  var judul = rak ? (rak==='(kosong)' ? 'belum dirak' : 'rak '+esc(rak)) : '';
   el.innerHTML = '<div class="muted" style="margin:-2px 0 7px">'+
-    (jml? jml+' baris ketemu · <button class="lnk" onclick="selAllBulk(true)">Pilih semua hasil</button>'+
+    (jml? jml+' baris ketemu'+(judul? ' di <b>'+judul+'</b>':'')+
+          ' · <button class="lnk" onclick="selAllBulk(true)">Pilih semua hasil</button>'+
           ' · <button class="lnk" onclick="cetakHasilCari()">🖨️ Cetak semua hasil</button>'
         : 'tidak ada yang cocok')+'</div>';
 }
 function hapusCariBulk(){
   if($('bFind')) $('bFind').value = '';
+  state.rakFilter = '';
   renderBulk();
   if($('bFind')) $('bFind').focus();
 }
@@ -1948,7 +1986,7 @@ function terpilihBulk(){
 function updatePrintBulk(){
   var n = terpilihBulk().length, tot = (state.bulkTampil||[]).length;
   var b = $('btnPrintBulk'); if(!b) return;
-  var adaCari = !!($('bFind') && $('bFind').value.trim());
+  var adaCari = !!(($('bFind') && $('bFind').value.trim()) || state.rakFilter);
   // tanpa centang, yang dicetak = semua yang sedang tampil (ikut hasil pencarian)
   b.textContent = n ? ('🖨️ Cetak '+n+' label')
                     : ('🖨️ Cetak '+(adaCari? 'hasil cari' : 'semua')+' ('+tot+')');
