@@ -28,6 +28,8 @@ header{position:sticky;top:0;z-index:40;background:var(--acc);color:#fff;box-sha
   min-width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .chipu{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:999px;padding:6px 11px;font-size:12.5px;
   max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+/* penanda kecil: masih ada simpanan yang dikirim di latar (PIC tidak perlu menunggu) */
+.sync{background:rgba(255,255,255,.22);color:#fff;border-radius:999px;padding:5px 9px;font-size:11.5px;margin-right:6px}
 
 .wrap{padding:9px 10px;max-width:760px;margin:0 auto}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:10px;margin-bottom:9px}
@@ -228,6 +230,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   <button class="ico hide" id="btnBack" onclick="goBack()" title="Kembali">←</button>
   <span class="brand" id="brandTxt">🏭 WMS Blackjack</span>
   <span class="sp"></span>
+  <span class="sync hide" id="antreTanda" title="Sedang menyimpan di latar belakang"></span>
   <span class="chipu" id="chipUser" onclick="logout()" title="Ganti PIC">👤 —</span>
   <button class="ico" id="btnReload" onclick="reloadAll()" title="Muat ulang">↻</button>
   <button class="ico" id="btnMenu" onclick="showMenu()" title="Menu">☰</button>
@@ -562,7 +565,11 @@ var DEFAULT_PICS = [
 ];
 var KIRIMAN_WAJIB = true;  // tiap koli harus menempel ke satu kiriman (vendor + no surat jalan)
 var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1',
-          kiriman:'tk_kiriman', pending:'tk_pending', rack:'tk_rack_v1'};
+          kiriman:'tk_kiriman', pending:'tk_pending', rack:'tk_rack_v1', antre:'tk_antre_v1'};
+/* Jeda pengumpul: operasi yang terjadi dalam rentang ini digabung jadi SATU kiriman.
+   Satu panggilan ke Apps Script memakan ±3 detik apa pun isinya, jadi menggabung
+   8 simpanan = 3 detik, bukan 24 detik. Nilainya kecil supaya tetap terasa langsung. */
+var JEDA_GABUNG = 400;
 
 var state = {
   exec:'', user:'', pics:[], vendors:[], master:[], byBar:{}, byKode:{},
@@ -571,7 +578,8 @@ var state = {
   pending:{}, tmpSeq:0,
   modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null,
   rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item',
-  bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:''
+  bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:'',
+  antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}
 };
 
 /* ================= UTIL ================= */
@@ -602,15 +610,150 @@ function postExec(payload, tries, timeoutMs){
       headers:{'Content-Type':'text/plain;charset=utf-8'}, signal:ctl.signal, redirect:'follow'
     }).then(function(r){ clearTimeout(to); return r.text(); }).then(function(t){
       var o; try{ o=JSON.parse(t); }catch(e){ throw new Error('Respons bukan JSON (cek akses deployment = Anyone)'); }
-      if(o && o.ok===false && o.error) throw new Error(o.error);
+      if(o && o.ok===false && o.error){
+        // server menjawab tapi menolak → percuma dikirim ulang (beda dengan jaringan putus)
+        var err = new Error(o.error); err.ditolak = true; throw err;
+      }
       return o;
     }).catch(function(e){
       clearTimeout(to);
-      if(n<tries) return new Promise(function(res){ setTimeout(res, 700*n); }).then(function(){ return attempt(n+1); });
+      if(e && e.ditolak) throw e;                       // ditolak server → jangan diulang
+    if(n<tries) return new Promise(function(res){ setTimeout(res, 700*n); }).then(function(){ return attempt(n+1); });
       throw e;
     });
   };
   return attempt(1);
+}
+
+/* =============== ANTREAN SIMPAN (latar belakang) ===============
+   Aturannya: PIC tidak pernah menunggu server. Setiap simpanan langsung
+   tampil di layar, lalu dititipkan ke antrean ini. Antrean:
+   • menggabungkan operasi yang berdekatan jadi satu panggilan `batch`,
+   • mengirim di latar (layar tetap bisa dipakai),
+   • disimpan di HP → app ditutup/mati pun operasinya tidak hilang,
+   • aman diulang karena tiap operasi membawa clientId sendiri.               */
+function simpanAntre(){
+  try{ localStorage.setItem(LS.antre, JSON.stringify(state.antre)); }catch(e){}
+}
+function antre(payload, opt){
+  opt = opt || {};
+  payload.clientId = payload.clientId || uuid();
+  var tugas = {id:uuid(), payload:payload, gagal:0, tag:opt.tag||payload.action};
+  state.antre.push(tugas);
+  simpanAntre();
+  jadwalAntre(opt.segera ? 0 : JEDA_GABUNG);
+  return tugas.id;
+}
+function jadwalAntre(ms){
+  if(state.antreTimer) return;
+  state.antreTimer = setTimeout(function(){ state.antreTimer=null; kirimAntre(); }, ms==null? JEDA_GABUNG : ms);
+}
+/* isi koli dead stock baru tidak boleh dikirim sebelum nomor aslinya ada —
+   kecuali operasinya membawa dsKey, karena server bisa menerjemahkannya sendiri */
+function siapKirim(t){
+  var p = t.payload || {};
+  if(typeof p.no === 'string' && p.no.indexOf('DS-baru') === 0 && !p.dsKey) return false;
+  return true;
+}
+function kirimAntre(){
+  if(!state.antre.length) return;
+  if(state.antreJalan >= 3){ jadwalAntre(600); return; }   // maks 3 kiriman paralel
+  var ambil = [], sisa = [];
+  state.antre.forEach(function(t){
+    if(ambil.length < 20 && siapKirim(t)) ambil.push(t); else sisa.push(t);
+  });
+  state.antre = sisa;
+  simpanAntre();
+  if(!ambil.length){ jadwalAntre(700); return; }
+  state.antreJalan++;
+  tandaAntre();
+  var ops = ambil.map(function(t){ return t.payload; });
+  var kirim;
+  if(ops.length===1){
+    kirim = postExec(ops[0], 1, 30000).then(function(o){ return [o]; });
+  } else if(state.punyaBatch===false){
+    // Apps Script versi lama belum punya 'batch' → kirim serentak (bukan satu-satu)
+    kirim = Promise.all(ops.map(function(p){
+      return postExec(p, 1, 30000).catch(function(e){ return {ok:false, error:e.message}; });
+    }));
+  } else {
+    kirim = postExec({action:'batch', ops:ops}, 1, 60000).then(function(o){
+      if(!o || o.ok===false) throw new Error((o&&o.error)||'batch gagal');
+      return o.hasil || [];
+    });
+  }
+  kirim.then(function(hasil){
+    ambil.forEach(function(t, i){
+      var h = hasil[i] || {ok:false, error:'tidak ada balasan'};
+      if(h.ok===false){ gagalAntre(t, new Error(h.error||'gagal'), true); return; }
+      if(t.payload.__lanjut) try{ t.payload.__lanjut(h); }catch(e){}
+      terapkanHasil(t, h);
+    });
+  }).catch(function(e){
+    ambil.forEach(function(t){ gagalAntre(t, e, !!e.ditolak); });
+  }).then(function(){
+    state.antreJalan--; tandaAntre();
+    if(state.antre.length) jadwalAntre(0);
+  });
+}
+/* balasan server dipakai untuk mengoreksi data lokal (mis. nomor baris di sheet) */
+function terapkanHasil(t, h){
+  var p = t.payload;
+  if(p.action==='bulksimpan' && h.row){
+    var b = state.bn.filter(function(x){ return x.kode===p.kode && (x.rak||'').toUpperCase()===String(p.rak||'').toUpperCase(); })[0];
+    if(b){ b.row = h.row; if(h.sisa!=null && !state.antre.length) { b.sisa = h.sisa; b.dus = h.dus; } }
+  }
+  if(p.action==='dsbuat' && h.no) petaDS(p.clientId, h.no);
+}
+function gagalAntre(t, e, tetap){
+  t.gagal++;
+  // 'tetap' = server menolak (mis. sisa tak cukup) → percuma diulang
+  if(!tetap && t.gagal < 4){
+    state.antre.unshift(t); simpanAntre();
+    jadwalAntre(900*t.gagal);
+    return;
+  }
+  simpanAntre();
+  if(t.payload.__gagal) try{ t.payload.__gagal(e); }catch(e2){}
+  toast('Gagal menyimpan ('+t.tag+'): '+e.message+' — muat ulang untuk menyamakan data', 5000);
+}
+function tandaAntre(){
+  var el = $('antreTanda'); if(!el) return;
+  var n = state.antre.length + state.antreJalan;
+  el.textContent = n? ('⏳ '+n) : '';
+  el.className = n? 'sync' : 'sync hide';
+}
+function lanjutAntre(){
+  var a=[];
+  try{ a = JSON.parse(localStorage.getItem(LS.antre)||'[]'); }catch(e){}
+  if(!a.length) return;
+  state.antre = a.concat(state.antre);
+  toast('Melanjutkan '+a.length+' simpanan yang belum terkirim…', 3000);
+  jadwalAntre(0);
+}
+/* nomor DS sementara (dibuat lokal) → nomor asli dari server */
+function petaDS(kunci, no){
+  var lama = state.dsTmp && state.dsTmp[kunci];
+  if(!lama) return;
+  var d = state.ds.filter(function(x){ return x.no===lama; })[0];
+  if(d) d.no = no;
+  if(state.dsItem[lama]){ state.dsItem[no] = state.dsItem[lama]; delete state.dsItem[lama]; }
+  if(state.dsNo===lama) state.dsNo = no;
+  // operasi yang masih mengantre untuk koli ini ikut diperbaiki nomornya
+  state.antre.forEach(function(t){ if(t.payload && t.payload.no===lama) t.payload.no = no; });
+  simpanAntre();
+  delete state.dsTmp[kunci];
+  if(state.screen==='bulk') renderBulk();
+  if(state.screen==='ds') renderDS();
+}
+
+/* "Pemanasan": panggilan kosong ±1,5 dtk yang menyiapkan koneksi ke Apps Script
+   saat PIC mulai mengetik, supaya simpanan sesudahnya tidak mulai dari nol. */
+function hangatkan(){
+  var t = Date.now();
+  if(t - state.hangatT < 25000) return;
+  state.hangatT = t;
+  postExec({action:'ping'}, 1, 8000).catch(function(){});
 }
 
 /* ================= BOOT ================= */
@@ -619,6 +762,8 @@ function boot(){
   state.exec = localStorage.getItem(LS.exec) || DEFAULT_EXEC;
   state.user = localStorage.getItem(LS.user) || '';
   try{ state.kiriman = JSON.parse(localStorage.getItem(LS.kiriman)||'null'); }catch(e){}
+  // sesi bernomor sementara tak berlaku lagi setelah app dibuka ulang (nomor aslinya sudah ada di server)
+  if(state.kiriman && String(state.kiriman.no||'').indexOf('KR-baru')===0) state.kiriman = null;
   $('dTgl').value = todayStr();
   $('fTgl').value = '';
   bindSearch();
@@ -671,6 +816,8 @@ function afterExec(){
     renderPicList();
     if(state.screen) { renderKirChip(); renderKoli(); }
     resumePending();
+    lanjutAntre();
+    state.punyaBatch = !!(o.features && o.features.batch);
     if(FOTO_WAJIB && !(o.features && o.features.photo)){
       state.oldBackend = true;
       setTimeout(function(){ toast('⚠️ Apps Script belum diperbarui — fitur baru belum aktif. Minta admin paste ulang Code.gs → New version.', 7000); }, 1200);
@@ -771,6 +918,7 @@ function goBack(){
 /* ---------- menu awal ---------- */
 function pilihModul(m){
   state.modul = m;
+  hangatkan();                 // siapkan koneksi sebelum simpanan pertama
   if(m==='penerimaan') show('sesi');
   else if(m==='bulk') show('bulk');
   else if(m==='rack') show('rack');
@@ -834,12 +982,11 @@ function hapusSesi(no){
   state.kirimanList.splice(idx,1);
   if(state.kiriman && state.kiriman.no===no){ state.kiriman=null; state.sesiNo=''; try{ localStorage.removeItem(LS.kiriman); }catch(e){} }
   renderSesi(); toast('Sesi '+no+' dihapus');
-  postExec({action:'delkiriman', no:no}, 2).then(function(o){
-    if(!o.ok) throw new Error(o.error||'gagal');
-  }).catch(function(e){
-    state.kirimanList.splice(idx,0,k); renderSesi();
-    alert('Gagal menghapus sesi: '+e.message);
-  });
+  antre({action:'delkiriman', no:no,
+         __gagal:function(e){
+           state.kirimanList.splice(idx,0,k); renderSesi();
+           alert('Gagal menghapus sesi: '+e.message);
+         }}, {tag:no});
 }
 
 function hapusKoli(no){
@@ -854,13 +1001,12 @@ function hapusKoli(no){
   state.editNo=null; state.editFoto='';
   show(k.tipe==='BULK' ? 'bulk' : 'koli');
   toast('Koli '+no+' dihapus');
-  postExec({action:'delkoli', no:no}, 2).then(function(o){
-    if(!o.ok) throw new Error(o.error||'gagal');
-  }).catch(function(e){
-    state.koli.splice(idx,0,k); state.items[no]=simpanItem;
-    if(state.screen==='koli') renderKoliList(); if(state.screen==='bulk') renderBulk();
-    alert('Gagal menghapus koli: '+e.message);
-  });
+  antre({action:'delkoli', no:no,
+         __gagal:function(e){
+           state.koli.splice(idx,0,k); state.items[no]=simpanItem;
+           if(state.screen==='koli') renderKoliList(); if(state.screen==='bulk') renderBulk();
+           alert('Gagal menghapus koli: '+e.message);
+         }}, {tag:no});
 }
 
 /* item yang ternyata tidak jadi diambil / tidak ada barangnya */
@@ -883,15 +1029,14 @@ function hapusItem(idx){
   s.koli.qty = arr.reduce(function(a,b){ return a+num(b.qty); },0);
   renderAmbilBox(s.koli, s.items);
   toast(it.kode+' dihapus dari '+no);
-  postExec({action:'delitem', no:no, kode:it.kode, nama:it.nama}, 2).then(function(o){
-    if(!o.ok) throw new Error(o.error||'gagal');
-  }).catch(function(e){
-    if(backup && pos>=0) arr.splice(pos,0,backup);
-    s.items.splice(idx,0,it);
-    s.koli.sku = arr.length; s.koli.qty = arr.reduce(function(a,b){ return a+num(b.qty); },0);
-    renderAmbilBox(s.koli, s.items);
-    alert('Gagal menghapus item: '+e.message);
-  });
+  antre({action:'delitem', no:no, kode:it.kode, nama:it.nama,
+         __gagal:function(e){
+           if(backup && pos>=0) arr.splice(pos,0,backup);
+           s.items.splice(idx,0,it);
+           s.koli.sku = arr.length; s.koli.qty = arr.reduce(function(a,b){ return a+num(b.qty); },0);
+           renderAmbilBox(s.koli, s.items);
+           alert('Gagal menghapus item: '+e.message);
+         }}, {tag:no});
 }
 
 /* ---------- isi satu sesi ---------- */
@@ -1095,14 +1240,13 @@ function rackSimpan(){
   o.status='DONE'; o.petugas=state.user; o.sticker= kardus? '' : e.sticker;
   hide('backRack'); renderRack(); rackCacheSimpan();
   toast(o.kode+' → '+o.alamat);
-  postExec(payload, 3, 25000).then(function(r){
-    if(!r.ok) throw new Error(r.error||'gagal');
-    o.waktu = r.waktu||o.waktu; rackCacheSimpan();
-  }).catch(function(err){
+  payload.__lanjut = function(r){ o.waktu = r.waktu||o.waktu; rackCacheSimpan(); };
+  payload.__gagal = function(err){
     for(var k in lama) o[k]=lama[k];
     renderRack(); rackCacheSimpan();
     toast('Gagal simpan posisi: '+err.message, 4000);
-  });
+  };
+  antre(payload, {tag:o.kode});
 }
 
 function rackStikerCepat(v){
@@ -1119,10 +1263,11 @@ function rackKosongkan(){
   var lama = {rack:o.rack, level:o.level, bin:o.bin, alamat:o.alamat, status:o.status, petugas:o.petugas, sticker:o.sticker};
   o.rack=''; o.level=''; o.bin=''; o.alamat=''; o.status=''; o.petugas=''; o.sticker='';
   hide('backRack'); renderRack(); rackCacheSimpan();
-  postExec({action:'rackupdate', kode:o.kode, row:o.row, clear:1}, 3, 25000).catch(function(err){
-    for(var k in lama) o[k]=lama[k]; renderRack(); rackCacheSimpan();
-    toast('Gagal mengosongkan: '+err.message, 4000);
-  });
+  antre({action:'rackupdate', kode:o.kode, row:o.row, clear:1,
+         __gagal:function(err){
+           for(var k in lama) o[k]=lama[k]; renderRack(); rackCacheSimpan();
+           toast('Gagal mengosongkan: '+err.message, 4000);
+         }}, {tag:o.kode});
 }
 
 function rackCacheSimpan(){
@@ -1334,6 +1479,7 @@ function bulkTambah(){
 
 /* --- NORMAL: input jumlah dus --- */
 function tanyaDus(o, rakAwal){
+  hangatkan();
   var barisSKU = state.bn.filter(function(x){ return x.kode===o.kode; });
   var ada = rakAwal!=null ? barisSKU.filter(function(x){ return (x.rak||'')===rakAwal; })[0] : null;
   state.pendBulk = o;
@@ -1394,14 +1540,13 @@ function simpanDus(mode){
   }
   $('bQ').value=''; renderBulk();
   toast(o.kode+(rak? ' @rak '+rak:'')+' → '+num(ada.dus)+' dus');
-  postExec({action:'bulksimpan', kode:o.kode, nama:o.nama, satuan:o.satuan, dus:dus, isi:isi, mode:mode,
-            rak:rak, pic:state.user}, 3, 25000)
-  .then(function(r){ if(!r.ok) throw new Error(r.error||'gagal'); })
-  .catch(function(e){
-    if(backup){ ada.dus=backup.dus; ada.sisa=backup.sisa; ada.isi=backup.isi; }
-    else state.bn = state.bn.filter(function(x){ return x!==ada; });
-    renderBulk(); alert('Gagal menyimpan: '+e.message);
-  });
+  antre({action:'bulksimpan', kode:o.kode, nama:o.nama, satuan:o.satuan, dus:dus, isi:isi, mode:mode,
+         rak:rak, row:ada.row||0, pic:state.user,
+         __gagal:function(e){
+           if(backup){ ada.dus=backup.dus; ada.sisa=backup.sisa; ada.isi=backup.isi; }
+           else state.bn = state.bn.filter(function(x){ return x!==ada; });
+           renderBulk(); alert('Gagal menyimpan: '+e.message);
+         }}, {tag:o.kode});
 }
 
 function editBN(id){
@@ -1456,27 +1601,42 @@ function kirimPindah(){
   if(num(x.dus)<=0) state.bn = state.bn.filter(function(y){ return y!==x; });
   renderBulk();
   toast(dus+' dus '+x.kode+' → rak '+ke);
-  postExec({action:'bulkpindah', kode:x.kode, dari:dari, ke:ke, dus:dus, pic:state.user, clientId:uuid()}, 3, 30000)
-  .then(function(o){ if(!o.ok) throw new Error(o.error||'gagal'); })
-  .catch(function(e){
-    x.dus=backup.dus; x.sisa=backup.sisa;
-    if(state.bn.indexOf(x)<0) state.bn.unshift(x);
-    if(tujBaru) state.bn = state.bn.filter(function(y){ return y!==tuj; });
-    else { tuj.dus=num(tuj.dus)-dus; tuj.sisa=num(tuj.sisa)-dus; }
-    renderBulk(); alert('Gagal memindah: '+e.message);
-  });
+  antre({action:'bulkpindah', kode:x.kode, dari:dari, ke:ke, dus:dus, pic:state.user,
+         row:x.row||0, rowKe:(tujBaru? 0 : (tuj.row||0)),
+         __gagal:function(e){
+           x.dus=backup.dus; x.sisa=backup.sisa;
+           if(state.bn.indexOf(x)<0) state.bn.unshift(x);
+           if(tujBaru) state.bn = state.bn.filter(function(y){ return y!==tuj; });
+           else { tuj.dus=num(tuj.dus)-dus; tuj.sisa=num(tuj.sisa)-dus; }
+           renderBulk(); alert('Gagal memindah: '+e.message);
+         }}, {tag:'pindah rak'});
 }
 
 /* --- DEAD STOCK --- */
+/* Koli DS dibuat langsung di layar dengan nomor sementara supaya PIC bisa
+   segera mengisi; nomor asli (DS-0007) menyusul dari server beberapa detik lagi. */
 function buatDS(){
   if(!confirm('Buat koli dead stock baru?')) return;
-  postExec({action:'dsbuat', pic:state.user, items:[]}, 2, 30000).then(function(o){
-    if(!o.ok) throw new Error(o.error||'gagal');
-    state.ds.unshift({no:o.no, tanggal:todayStr(), sku:0, qty:0, isi:'ADA', pic:state.user, waktu:'', catatan:''});
-    state.dsItem[o.no] = [];
-    renderBulk(); openDS(o.no);
-    toast('Koli '+o.no+' dibuat — tambahkan isinya');
-  }).catch(function(e){ alert('Gagal membuat koli: '+e.message); });
+  var n = 1;
+  while(state.ds.filter(function(x){ return x.no==='DS-baru'+n; }).length) n++;
+  var tmp = 'DS-baru'+n, cid = uuid();
+  state.dsTmp = state.dsTmp || {};
+  state.dsTmp[cid] = tmp;
+  state.dsKey = state.dsKey || {};
+  state.dsKey[tmp] = cid;
+  state.ds.unshift({no:tmp, tanggal:todayStr(), sku:0, qty:0, isi:'ADA', pic:state.user, waktu:'', catatan:''});
+  state.dsItem[tmp] = [];
+  renderBulk(); openDS(tmp);
+  toast('Koli baru siap diisi — nomornya menyusul');
+  antre({action:'dsbuat', pic:state.user, items:[], clientId:cid,
+         __gagal:function(e){
+           state.ds = state.ds.filter(function(x){ return x.no!==tmp; });
+           delete state.dsItem[tmp];
+           state.antre = state.antre.filter(function(t){ return !(t.payload && t.payload.no===tmp); });
+           simpanAntre();
+           if(state.dsNo===tmp) show('bulk');
+           renderBulk(); alert('Gagal membuat koli: '+e.message);
+         }}, {segera:true, tag:'koli dead stock'});
 }
 
 function openDS(no){
@@ -1549,9 +1709,9 @@ function tambahItemDS(){
   if(d){ d.sku=arr.length; d.qty=arr.reduce(function(a,b){return a+num(b.qty);},0); }
   $('dQ').value=''; renderDS();
   toast(o.kode+' ×'+q+' masuk '+no);
-  postExec({action:'dsitem', no:no, pic:state.user, items:[{kode:o.kode,nama:o.nama,satuan:o.satuan,qty:q}]}, 3, 25000)
-    .then(function(r){ if(!r.ok) throw new Error(r.error||'gagal'); })
-    .catch(function(e){ alert('Gagal menambah isi: '+e.message); loadBulk(false); });
+  antre({action:'dsitem', no:no, dsKey:(state.dsKey||{})[no]||'', pic:state.user,
+         items:[{kode:o.kode,nama:o.nama,satuan:o.satuan,qty:q}],
+         __gagal:function(e){ alert('Gagal menambah isi: '+e.message); loadBulk(false); }}, {tag:no});
 }
 
 function hapusDS(no){
@@ -1561,9 +1721,8 @@ function hapusDS(no){
   state.ds = state.ds.filter(function(x){ return x.no!==no; });
   delete state.dsItem[no];
   show('bulk');
-  postExec({action:'dshapus', no:no}, 2).then(function(o){
-    if(!o.ok) throw new Error(o.error||'gagal');
-  }).catch(function(e){ alert('Gagal menghapus: '+e.message); loadBulk(false); });
+  antre({action:'dshapus', no:no,
+         __gagal:function(e){ alert('Gagal menghapus: '+e.message); loadBulk(false); }}, {tag:no});
 }
 
 function hapusDSItem(idx){
@@ -1575,9 +1734,8 @@ function hapusDSItem(idx){
   var d = state.ds.filter(function(x){ return x.no===no; })[0];
   if(d){ d.sku=arr.length; d.qty=arr.reduce(function(a,b){return a+num(b.qty);},0); }
   renderDS();
-  postExec({action:'dshapusitem', no:no, kode:it.kode, nama:it.nama}, 2)
-    .then(function(o){ if(!o.ok) throw new Error(o.error||'gagal'); })
-    .catch(function(e){ alert('Gagal menghapus: '+e.message); loadBulk(false); });
+  antre({action:'dshapusitem', no:no, kode:it.kode, nama:it.nama,
+         __gagal:function(e){ alert('Gagal menghapus: '+e.message); loadBulk(false); }}, {tag:no});
 }
 
 /* --- CETAK: label 10×6 cm, 8 per lembar A4 ---
@@ -1824,18 +1982,17 @@ function kirimAmbilDus(id){
                        nama:bn.nama, qty:q, sisa:bn.sisa, tujuan:state.tujuan, pic:state.user});
   $('aQ').value=''; renderAmbilLog(); if(state.screen==='bulk') renderBulk();
   toast('Mengambil '+q+' dus '+bn.kode+(bn.rak? ' dari rak '+bn.rak:'')+'…');
-  postExec({action:'bulkambil', sumber:'NORMAL', clientId:uuid(), pic:state.user, tujuan:state.tujuan,
-            items:[{kode:bn.kode, nama:bn.nama, rak:bn.rak||'', qty:q}]}, 3, 30000)
-  .then(function(o){
-    if(!o.ok) throw new Error(o.error||'gagal');
-    state.ambil.forEach(function(a){ if(a.no==='…' && a.kode===bn.kode) a.no=o.noAmbil||'-'; });
-    renderAmbilLog();
-    toast(o.noAmbil+' tercatat · '+q+' dus');
-  }).catch(function(e){
-    bn.diambil=lama.diambil; bn.sisa=lama.sisa;
-    state.ambil = state.ambil.filter(function(a){ return a.no!=='…'; });
-    renderAmbilLog(); alert('Gagal mencatat pengambilan: '+e.message);
-  });
+  antre({action:'bulkambil', sumber:'NORMAL', pic:state.user, tujuan:state.tujuan,
+         items:[{kode:bn.kode, nama:bn.nama, rak:bn.rak||'', qty:q}],
+         __lanjut:function(o){
+           state.ambil.forEach(function(a){ if(a.no==='…' && a.kode===bn.kode) a.no=o.noAmbil||'-'; });
+           renderAmbilLog();
+         },
+         __gagal:function(e){
+           bn.diambil=lama.diambil; bn.sisa=lama.sisa;
+           state.ambil = state.ambil.filter(function(a){ return a.no!=='…'; });
+           renderAmbilLog(); alert('Gagal mencatat pengambilan: '+e.message);
+         }}, {tag:bn.kode});
 }
 
 function bukaKoliAmbil(k, fokusKode){
@@ -1920,18 +2077,18 @@ function kirimAmbil(otomatis){
                          qty:num(a.ambil), sisa:0, tujuan:state.tujuan, pic:state.user});
   });
   batalAmbil(); renderAmbilLog();
-  toast('Mengirim '+jml+' pcs dari '+payload.no+'…');
-  var t0=Date.now();
-  postExec(payload, 3, 30000).then(function(o){
-    if(!o.ok) throw new Error(o.error||'gagal');
-    toast((o.duplicate?'Sudah tercatat sebelumnya':(o.noAmbil+' tercatat'))+' · '+((Date.now()-t0)/1000).toFixed(1)+' dtk');
-    state.ambil.forEach(function(a){ if(a.no==='…' && a.koli===payload.no) a.no = o.noAmbil||'-'; });
+  toast(jml+' pcs dari '+payload.no+' tercatat');
+  var noKoli = payload.no;
+  payload.__lanjut = function(o){
+    state.ambil.forEach(function(a){ if(a.no==='…' && a.koli===noKoli) a.no = o.noAmbil||'-'; });
     if(state.screen==='ambil') renderAmbilLog();
     if(state.screen==='bulk') renderBulk();
-  }).catch(function(e){
-    alert('Pengambilan GAGAL terkirim: '+e.message+'\n\nUlangi scan koli '+payload.no+' — data di layar akan diselaraskan ulang.');
+  };
+  payload.__gagal = function(e){
+    alert('Pengambilan GAGAL terkirim: '+e.message+'\n\nUlangi scan koli '+noKoli+' — data di layar akan diselaraskan ulang.');
     loadKoli(false);
-  });
+  };
+  antre(payload, {tag:noKoli});
 }
 
 function renderAmbilLog(){
@@ -2352,7 +2509,10 @@ function submitKoli(){
     clientId: draft.cid || (draft.cid = uuid()),
     tipe: bulk? 'BULK' : 'PENERIMAAN',
     jenis: bulk? (draft.jenis||'NORMAL') : '',
-    tanggal: draft.tanggal, kiriman: bulk? '' : (state.kiriman? state.kiriman.no : ''), pic: state.user, catatan: draft.catatan,
+    tanggal: draft.tanggal, kiriman: bulk? '' : (state.kiriman? state.kiriman.no : ''),
+    // sesi yang nomornya masih menyusul dikenali server lewat kunci ini
+    kirimanKey: (!bulk && state.kiriman && state.kiriman.kunci) ? state.kiriman.kunci : '',
+    pic: state.user, catatan: draft.catatan,
     photos: draft.photos.map(function(d){ return String(d).split('base64,')[1] || ''; }),
     items: draft.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; })
   };
@@ -2413,6 +2573,24 @@ function resumePending(){
 /* pengiriman sesungguhnya — berjalan di latar, aman diulang (clientId yang sama) */
 function kirimKoli(key, payload, edit){
   var t0 = Date.now();
+  // sesi baru: tunggu nomor KR asli (biasanya <3 dtk) supaya koli tidak nyangkut
+  if(String(payload.kiriman||'').indexOf('KR-baru')===0){
+    var kir = state.kirimanList.filter(function(x){ return x.kunci===payload.kirimanKey; })[0];
+    if(kir && String(kir.no).indexOf('KR-baru')!==0){
+      payload.kiriman = kir.no;
+    } else if(!kir || (payload.__tunggu||0) > 40){        // sesinya gagal dibuat / terlalu lama
+      var kol0 = state.koli.filter(function(x){ return x.no===key; })[0];
+      if(kol0){ kol0.sync='gagal'; kol0.err='Sesi kiriman belum tersimpan'; }
+      if(state.screen==='koli') renderKoliList();
+      savePending();
+      toast('Sesi kiriman belum tersimpan — tekan ↻ di kartu koli untuk mengirim ulang', 5000);
+      return;
+    } else {
+      payload.__tunggu = (payload.__tunggu||0)+1;
+      setTimeout(function(){ kirimKoli(key, payload, edit); }, 900);
+      return;
+    }
+  }
   postExec(payload, 3, (payload.photos&&payload.photos.length) ? 120000 : 25000).then(function(o){
     var dtk = ((Date.now()-t0)/1000).toFixed(1);
     if(!o.ok) throw new Error(o.error||'gagal');
@@ -2592,20 +2770,36 @@ function createKiriman(){
   var vendor = $('nkVendor').value.trim();
   if(!vendor){ toast('Nama vendor wajib diisi'); $('nkVendor').focus(); return; }
   var sj = $('nkSJ').value.trim();
-  var btn = $('nkBtn'); btn.disabled = true; btn.textContent = 'Membuat…';
-  postExec({action:'newkiriman', vendor:vendor, sj:sj, pic:state.user, tanggal:todayStr()}, 2, 30000)
-  .then(function(o){
-    if(!o.ok) throw new Error(o.error||'gagal');
-    var k = {no:o.no, vendor:o.vendor, sj:o.sj, tanggal:o.tanggal, status:'AKTIF'};
-    state.kirimanList.unshift(k);
-    if(state.vendors.indexOf(vendor)<0) state.vendors.push(vendor);
-    hide('backDet');
-    openSesiView(k.no);            // langsung masuk ke sesinya
-    toast('Sesi '+o.no+' dimulai — '+vendor);
-  }).catch(function(e){
-    btn.disabled=false; btn.textContent='➕ Mulai kiriman ini';
-    alert('Gagal membuat kiriman: '+e.message);
-  });
+  // sesi langsung terbuka dengan nomor sementara; KR-xxxx menyusul dari server
+  var n = 1;
+  while(state.kirimanList.filter(function(x){ return x.no==='KR-baru'+n; }).length) n++;
+  var tmp = 'KR-baru'+n, cid = uuid();
+  var k = {no:tmp, vendor:vendor, sj:sj, tanggal:todayStr(), status:'AKTIF', kunci:cid};
+  state.kirimanList.unshift(k);
+  if(state.vendors.indexOf(vendor)<0) state.vendors.push(vendor);
+  hide('backDet');
+  openSesiView(tmp);
+  toast('Sesi dimulai — '+vendor);
+  antre({action:'newkiriman', vendor:vendor, sj:sj, pic:state.user, tanggal:todayStr(), clientId:cid,
+         __lanjut:function(o){
+           if(!o.no) return;
+           k.no = o.no; k.vendor = o.vendor||k.vendor; k.sj = o.sj||k.sj;
+           if(state.kiriman === k || (state.kiriman && state.kiriman.kunci===cid)) setKiriman(k);
+           if(state.sesiNo===tmp) state.sesiNo = o.no;
+           state.koli.forEach(function(x){ if(x.kiriman===tmp) x.kiriman = o.no; });
+           state.antre.forEach(function(t){ if(t.payload && t.payload.kiriman===tmp) t.payload.kiriman = o.no; });
+           for(var key in state.pending){ if(state.pending[key] && state.pending[key].kiriman===tmp) state.pending[key].kiriman = o.no; }
+           simpanAntre(); savePending();
+           if(state.screen==='sesi') renderSesi();
+           if(state.screen==='koli') renderKoliList();
+           renderKirChip();
+         },
+         __gagal:function(e){
+           state.kirimanList = state.kirimanList.filter(function(x){ return x!==k; });
+           if(state.sesiNo===tmp) show('sesi');
+           renderSesi();
+           alert('Gagal membuat kiriman: '+e.message);
+         }}, {segera:true, tag:vendor});
 }
 function fillFilters(){
   var pics={}, vends={};
@@ -2808,6 +3002,7 @@ function withQR(cb){
 
 /* ================= SCANNER ================= */
 function openScan(modeKoli, target){
+  hangatkan();
   showEl('backScan');
   state.scanKoli = !!modeKoli;
   state.scanTarget = target||'item';
