@@ -179,25 +179,35 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 .ltab td{font-size:8.5pt;padding:.7mm 0;vertical-align:top;border-bottom:.15mm dotted #999;line-height:1.15}
 .ltab td.q,.ltab th.q{text-align:right;width:18mm;font-weight:bold;white-space:nowrap}
 .lfoot{margin-top:auto;padding-top:1.5mm;border-top:.3mm solid #000;font-size:8pt;display:flex;justify-content:space-between}
-/* label bulk 100×60 mm — ditata 2 kolom × 4 baris = 8 label per lembar A4 */
+/* label bulk 200×55 mm — 1 kolom × 5 baris = 5 label per lembar A4
+   (5 × 55 = 275 mm, muat di tinggi cetak A4 287 mm).
+   Selebar kertas, jadi motongnya cukup 3 guntingan lurus mendatar.
+   Tiap 4 label dibungkus .bpage sendiri supaya pemenggalan halaman terjadi
+   DI ANTARA label, bukan di tengah label (dulu QR bisa lompat ke halaman berikutnya). */
 .bsheet{display:flex;flex-wrap:wrap;width:200mm;background:#fff}
-.blabel{width:100mm;height:60mm;padding:4mm;box-sizing:border-box;background:#fff;color:#000;
-  font-family:Arial,Helvetica,sans-serif;display:flex;gap:3mm;align-items:center;overflow:hidden;
-  border:.2mm dashed #bbb}
-.blabel .bq{width:30mm;height:30mm;flex:none}
-.blabel .bq svg{width:30mm;height:30mm;display:block}
+.bpage{page-break-after:always;break-after:page}
+.bpage:last-child{page-break-after:auto;break-after:auto}
+.blabel{width:200mm;height:55mm;padding:4mm 6mm;box-sizing:border-box;background:#fff;color:#000;
+  font-family:Arial,Helvetica,sans-serif;display:flex;gap:5mm;align-items:center;overflow:hidden;
+  border:.2mm dashed #bbb;page-break-inside:avoid;break-inside:avoid}
+.blabel .bq{width:38mm;height:38mm;flex:none}
+.blabel .bq svg{width:38mm;height:38mm;display:block}
 .blabel .bq:empty{display:none}
 .blabel .bt{flex:1;min-width:0}
-.blabel .bn{font-size:15pt;font-weight:bold;line-height:1.1;max-height:22mm;overflow:hidden}
-.blabel .bn.kecil{font-size:12pt}
-.blabel .bk{font-size:9pt;margin-top:1.2mm;word-break:break-all;line-height:1.1}
-.blabel .bx{font-size:12pt;font-weight:bold;margin-top:1.6mm}
-.blabel .brak{display:inline-block;margin-top:1.4mm;padding:.8mm 2.4mm;border:.4mm solid #000;
-  border-radius:1.5mm;font-size:12pt;font-weight:bold}
+/* nama SKU = tulisan paling besar di label; ukurannya turun bertahap
+   mengikuti panjang nama supaya tetap muat tanpa terpotong */
+.blabel .bn{font-size:34pt;font-weight:bold;line-height:1.06;max-height:33mm;overflow:hidden}
+.blabel .bn.s2{font-size:28pt}
+.blabel .bn.s3{font-size:23pt}
+.blabel .bn.s4{font-size:19pt}
+.blabel .bk{font-size:10.5pt;margin-top:1.6mm;word-break:break-all;line-height:1.1}
+.blabel .bx{font-size:13pt;font-weight:bold;margin-top:1.6mm}
+.blabel .brak{flex:none;margin-left:4mm;padding:2mm 3.5mm;border:.5mm solid #000;
+  border-radius:2mm;font-size:16pt;font-weight:bold;white-space:nowrap;text-align:center}
 /* label dus dead stock — tanpa barcode, nomornya besar */
 .blabel.polos{align-items:flex-start;flex-direction:column;justify-content:center}
-.blabel.polos .dsno{font-size:30pt;font-weight:bold;letter-spacing:1px;line-height:1}
-.blabel.polos .dsket{font-size:11pt;margin-top:2.5mm}
+.blabel.polos .dsno{font-size:40pt;font-weight:bold;letter-spacing:1px;line-height:1}
+.blabel.polos .dsket{font-size:14pt;margin-top:3mm}
 
 /* label QR Master Rack 60×40 mm */
 .qrlabel{width:60mm;height:40mm;padding:2.5mm;box-sizing:border-box;background:#fff;color:#000;
@@ -1738,22 +1748,64 @@ function hapusDSItem(idx){
          __gagal:function(e){ alert('Gagal menghapus: '+e.message); loadBulk(false); }}, {tag:no});
 }
 
-/* --- CETAK: label 10×6 cm, 8 per lembar A4 ---
+/* --- CETAK: label 20×5,5 cm, 5 per lembar A4 (motongnya lurus mendatar) ---
    Label barang: nama SKU besar, kode + QR, isi per dus, dan lokasi rak. */
+/* Tebakan awal ukuran huruf nama SKU (dipakai kalau pengukuran tak sempat jalan) */
+function ukuranNama(nama){
+  var n = String(nama||'').length;
+  if(n<=26) return '';        // 34pt
+  if(n<=40) return ' s2';     // 28pt
+  if(n<=62) return ' s3';     // 23pt
+  return ' s4';               // 19pt
+}
+/* Lalu dipaskan dengan mengukur langsung: ambil ukuran huruf TERBESAR yang
+   masih muat di label, jadi nama SKU selalu sebesar-besarnya tanpa terpotong. */
+function paskanNamaLabel(){
+  var pr = $('printRoot');
+  var nama = pr.querySelectorAll('.blabel .bn');
+  if(!nama.length) return;
+  var gaya = pr.style.cssText;
+  pr.style.cssText = 'display:block;position:absolute;left:-10000px;top:0';
+  var kelas = ['', 's2', 's3', 's4'];
+  [].forEach.call(nama, function(bn){
+    var bt = bn.parentNode, lab = bt.parentNode;
+    var pad = parseFloat(getComputedStyle(lab).paddingTop) + parseFloat(getComputedStyle(lab).paddingBottom);
+    var muat = lab.clientHeight - pad;
+    for(var i=0; i<kelas.length; i++){
+      bn.className = 'bn' + (kelas[i] ? ' '+kelas[i] : '');
+      if(bn.scrollHeight <= bn.clientHeight + 1 && bt.scrollHeight <= muat + 1) break;
+    }
+  });
+  pr.style.cssText = gaya;
+}
 function labelBarangHTML(kode, nama, isiPcs, satuan, lokasi, perDus){
   var isi = num(isiPcs) > 0 ? (num(isiPcs)+' '+(satuan||'pcs')+(perDus===false?'':' / dus')) : (satuan? esc(satuan) : '');
+  // kotak rak ditaruh di ujung kanan label (di luar blok teks), ukurannya sengaja
+  // lebih kecil daripada nama SKU — nama barang yang harus paling menonjol
   return '<div class="blabel"><div class="bq">'+qrSvg(kode)+'</div>'+
     '<div class="bt">'+
-      '<div class="bn'+(String(nama||'').length>46?' kecil':'')+'">'+esc(nama)+'</div>'+
+      '<div class="bn'+ukuranNama(nama)+'">'+esc(nama)+'</div>'+
       '<div class="bk">'+esc(kode)+'</div>'+
       (isi? '<div class="bx">'+isi+'</div>' : '')+
-      (lokasi? '<div class="brak">'+esc(lokasi)+'</div>' : '')+
-    '</div></div>';
+    '</div>'+
+    (lokasi? '<div class="brak">'+esc(lokasi)+'</div>' : '')+
+    '</div>';
 }
 /* Label dus dead stock: tanpa barcode, cukup nomornya besar */
 function labelDusDSHTML(no, ket){
   return '<div class="blabel polos"><div class="dsno">'+esc(no)+'</div>'+
     '<div class="dsket">'+esc(ket||'')+'</div></div>';
+}
+/* Bagi label jadi lembaran 5 (1 kolom × 5 baris, tiap label selebar kertas).
+   Tanpa ini, printer memenggal halaman di tengah label — nama SKU tertinggal
+   di lembar sebelumnya, QR-nya pindah ke lembar berikutnya. */
+var LABEL_PER_LEMBAR = 5;
+function lembarBulk(labels){
+  var h = '';
+  for(var i=0; i<labels.length; i+=LABEL_PER_LEMBAR){
+    h += '<div class="bpage"><div class="bsheet">'+labels.slice(i, i+LABEL_PER_LEMBAR).join('')+'</div></div>';
+  }
+  return h;
 }
 
 function printBNLabel(id){
@@ -1775,20 +1827,19 @@ function printBulk(){
       if(!d) return '';
       var its = state.dsItem[no]||[];
       return labelDusDSHTML(no, dmy(d.tanggal)+' · '+its.length+' SKU · '+its.reduce(function(a,b){return a+num(b.qty);},0)+' pcs');
-    }).join('');
-    cetak('<div class="bsheet">'+h+'</div>', 'A4');
+    }).filter(Boolean);
+    cetak(lembarBulk(h), 'A4', '5mm');
   });
 }
 function cetakBulk(list){
   withQR(function(){
-    var h = '', total = 0;
+    var lab = [];
     list.forEach(function(x){
       var n = Math.max(1, num(x.dus));                 // 1 label per dus, isinya sama semua
-      for(var i=1;i<=n;i++) h += labelBarangHTML(x.kode, x.nama, x.isi, x.satuan, x.rak? ('RAK '+x.rak) : '');
-      total += n;
+      for(var i=1;i<=n;i++) lab.push(labelBarangHTML(x.kode, x.nama, x.isi, x.satuan, x.rak? ('RAK '+x.rak) : ''));
     });
-    cetak('<div class="bsheet">'+h+'</div>', 'A4');
-    toast(total+' label · '+Math.ceil(total/8)+' lembar A4');
+    cetak(lembarBulk(lab), 'A4', '5mm');
+    toast(lab.length+' label · '+Math.ceil(lab.length/LABEL_PER_LEMBAR)+' lembar A4');
   });
 }
 /* dead stock: label per SKU, bentuknya sama dengan label normal */
@@ -1796,16 +1847,16 @@ function printDSSKU(){
   var no = state.dsNo, its = state.dsItem[no]||[];
   if(!its.length){ toast('Koli ini belum ada isinya'); return; }
   withQR(function(){
-    var h = its.map(function(i){ return labelBarangHTML(i.kode, i.nama, i.qty, i.satuan, no, false); }).join('');
-    cetak('<div class="bsheet">'+h+'</div>', 'A4');
-    toast(its.length+' label SKU · '+Math.ceil(its.length/8)+' lembar A4');
+    var h = its.map(function(i){ return labelBarangHTML(i.kode, i.nama, i.qty, i.satuan, no, false); });
+    cetak(lembarBulk(h), 'A4', '5mm');
+    toast(its.length+' label SKU · '+Math.ceil(its.length/LABEL_PER_LEMBAR)+' lembar A4');
   });
 }
 function printDSLabel(){
   var no = state.dsNo, d = state.ds.filter(function(x){ return x.no===no; })[0]; if(!d) return;
   var its = state.dsItem[no]||[];
-  cetak('<div class="bsheet">'+labelDusDSHTML(no, dmy(d.tanggal)+' · '+its.length+' SKU · '+
-        its.reduce(function(a,b){return a+num(b.qty);},0)+' pcs')+'</div>', 'A4');
+  cetak(lembarBulk([labelDusDSHTML(no, dmy(d.tanggal)+' · '+its.length+' SKU · '+
+        its.reduce(function(a,b){return a+num(b.qty);},0)+' pcs')]), 'A4', '5mm');
 }
 /* label besar: daftar isi koli dead stock, 1 lembar A4 per koli */
 function printDSList(){
@@ -2978,9 +3029,11 @@ function buildLabels(nos){
 }
 
 /* satu pintu untuk semua pencetakan — ukuran kertas disetel sesuai jenis labelnya */
-function cetak(html, ukuran){
-  $('printStyle').textContent = '@media print{ @page{ size:'+ukuran+'; margin:'+(ukuran==='A4'?'8mm':'0')+'; } }';
-  if(html!=null) $('printRoot').innerHTML = html;
+function cetak(html, ukuran, margin){
+  // lembar label bulk butuh margin 5mm: 2 × 100mm = 200mm, pas di lebar A4 (210mm)
+  margin = margin || (ukuran==='A4' ? '8mm' : '0');
+  $('printStyle').textContent = '@media print{ @page{ size:'+ukuran+'; margin:'+margin+'; } }';
+  if(html!=null){ $('printRoot').innerHTML = html; paskanNamaLabel(); }
   setTimeout(function(){ window.print(); }, 150);
 }
 
