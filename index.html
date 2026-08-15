@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="utf-8">
@@ -177,6 +177,26 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 .ltab td{font-size:8.5pt;padding:.7mm 0;vertical-align:top;border-bottom:.15mm dotted #999;line-height:1.15}
 .ltab td.q,.ltab th.q{text-align:right;width:18mm;font-weight:bold;white-space:nowrap}
 .lfoot{margin-top:auto;padding-top:1.5mm;border-top:.3mm solid #000;font-size:8pt;display:flex;justify-content:space-between}
+/* label bulk 100×60 mm — ditata 2 kolom × 4 baris = 8 label per lembar A4 */
+.bsheet{display:flex;flex-wrap:wrap;width:200mm;background:#fff}
+.blabel{width:100mm;height:60mm;padding:4mm;box-sizing:border-box;background:#fff;color:#000;
+  font-family:Arial,Helvetica,sans-serif;display:flex;gap:3mm;align-items:center;overflow:hidden;
+  border:.2mm dashed #bbb}
+.blabel .bq{width:30mm;height:30mm;flex:none}
+.blabel .bq svg{width:30mm;height:30mm;display:block}
+.blabel .bq:empty{display:none}
+.blabel .bt{flex:1;min-width:0}
+.blabel .bn{font-size:15pt;font-weight:bold;line-height:1.1;max-height:22mm;overflow:hidden}
+.blabel .bn.kecil{font-size:12pt}
+.blabel .bk{font-size:9pt;margin-top:1.2mm;word-break:break-all;line-height:1.1}
+.blabel .bx{font-size:12pt;font-weight:bold;margin-top:1.6mm}
+.blabel .brak{display:inline-block;margin-top:1.4mm;padding:.8mm 2.4mm;border:.4mm solid #000;
+  border-radius:1.5mm;font-size:12pt;font-weight:bold}
+/* label dus dead stock — tanpa barcode, nomornya besar */
+.blabel.polos{align-items:flex-start;flex-direction:column;justify-content:center}
+.blabel.polos .dsno{font-size:30pt;font-weight:bold;letter-spacing:1px;line-height:1}
+.blabel.polos .dsket{font-size:11pt;margin-top:2.5mm}
+
 /* label QR Master Rack 60×40 mm */
 .qrlabel{width:60mm;height:40mm;padding:2.5mm;box-sizing:border-box;background:#fff;color:#000;
   font-family:Arial,Helvetica,sans-serif;display:flex;gap:2mm;align-items:center;overflow:hidden;
@@ -295,17 +315,35 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 <!-- ============ GUDANG BULK ============ -->
 <div class="wrap hide" id="scBulk">
   <div class="card">
-    <div class="row">
-      <input type="search" id="bQ" placeholder="🔍 Cari no koli / SKU" oninput="renderBulk()">
-      <button class="btn sec sm" onclick="loadKoli(true)">↻</button>
+    <div id="bMode"></div>
+    <div class="row" style="margin-top:7px">
+      <input type="search" id="bQ" placeholder="🔍 Cari / scan barang…" autocomplete="off">
+      <button class="btn sec sm" onclick="openScan(false,'bulk')" title="Scan barcode">📷</button>
     </div>
+    <div class="res" id="bRes"></div>
     <div id="bFilter" style="margin-top:7px"></div>
   </div>
   <div class="card">
-    <h2>🏬 Koli di gudang bulk <span class="muted" id="bCount"></span><span class="sp2"></span>
+    <h2 id="bJudul">🏬 Bulk normal <span class="muted" id="bCount"></span><span class="sp2"></span>
       <button class="lnk" onclick="selAllBulk(true)">Pilih semua</button>
       <button class="lnk" onclick="selAllBulk(false)">Bersihkan</button></h2>
     <div id="bList"></div>
+  </div>
+</div>
+
+<!-- ============ ISI SATU KOLI DEAD STOCK ============ -->
+<div class="wrap hide" id="scDS">
+  <div class="card" id="dsHead"></div>
+  <div class="card">
+    <div class="row">
+      <input type="search" id="dQ" placeholder="🔍 Cari / scan barang untuk ditambahkan…" autocomplete="off">
+      <button class="btn sec sm" onclick="openScan(false,'ds')" title="Scan barcode">📷</button>
+    </div>
+    <div class="res" id="dRes"></div>
+  </div>
+  <div class="card">
+    <h2>📦 Isi koli <span class="muted" id="dCount"></span></h2>
+    <div id="dList"></div>
   </div>
 </div>
 
@@ -313,10 +351,10 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 <div class="wrap hide" id="scAmbil">
   <div class="card">
     <div class="row">
-      <input type="search" id="aQ" placeholder="Scan / ketik no koli (mis. K-0007)" autocomplete="off">
-      <button class="btn sec sm" onclick="openScanKoli()" title="Scan QR koli">📷</button>
+      <input type="search" id="aQ" placeholder="Scan barcode barang / no koli (K-0007)" autocomplete="off">
+      <button class="btn sec sm" onclick="openScanKoli()" title="Scan QR koli / barcode barang">📷</button>
     </div>
-    <div class="muted" style="margin-top:5px">Arahkan kamera ke QR di label koli, atau ketik nomornya lalu Enter.</div>
+    <div class="muted" style="margin-top:5px">Dus <b>normal</b>: scan barcode barangnya. Dus <b>dead stock</b> (campur): scan QR di label kolinya.</div>
   </div>
   <div class="card hide" id="ambilBox"></div>
   <div class="card">
@@ -360,6 +398,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <button class="lnk" onclick="toggleNote()" id="noteBtn" title="Catatan koli">📝</button>
     </div>
     <input type="hidden" id="dTgl">
+    <div id="jenisWrap" class="hide" style="margin-top:6px"></div>
     <input type="text" id="dNote" class="hide" placeholder="Catatan koli (mis. kardus penyok)" oninput="draftSave()" style="margin-top:6px">
     <div class="row" style="margin-top:6px">
       <label class="btn sec sm" style="flex:none;cursor:pointer">📷 Foto
@@ -431,8 +470,13 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     <button class="btn" onclick="rackPrintMenu()">🖨️ Cetak</button>
   </div>
   <div class="actbar hide" id="actBulk">
-    <button class="btn" onclick="newKoliBulk()">➕ Koli baru</button>
+    <button class="btn" id="btnBulkTambah" onclick="bulkTambah()">➕ Tambah</button>
     <button class="btn sec" id="btnPrintBulk" onclick="printBulk()">🖨️ Cetak label</button>
+  </div>
+  <div class="actbar hide" id="actDS">
+    <button class="btn sec" onclick="printDSList()">📋 Daftar isi</button>
+    <button class="btn sec" onclick="printDSLabel()">🏷️ Label dus</button>
+    <button class="btn" onclick="printDSSKU()">🖨️ Label SKU</button>
   </div>
   <div class="tabs" id="tabsPenerimaan">
     <div class="tab on" id="tabSesi" onclick="show('sesi')"><b>📦</b>Kiriman</div>
@@ -526,7 +570,8 @@ var state = {
   kirimanList:[], kiriman:null, sesiNo:'', editNo:null, editFoto:'', sDay:'',
   pending:{}, tmpSeq:0,
   modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null,
-  rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item'
+  rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item',
+  bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:''
 };
 
 /* ================= UTIL ================= */
@@ -676,7 +721,7 @@ function enterApp(){
 function show(which){
   state.screen = which;
   var map = {menu:'scMenu', sesi:'scSesi', koli:'scKoli', buat:'scBuat', riwayat:'scRiwayat',
-             bulk:'scBulk', ambil:'scAmbil', rack:'scRack'};
+             bulk:'scBulk', ds:'scDS', ambil:'scAmbil', rack:'scRack'};
   for(var k in map) $(map[k]).classList.toggle('hide', k!==which);
   var bulkMode = (state.modul==='bulk');
   $('actSesi').classList.toggle('hide', which!=='sesi');
@@ -684,6 +729,7 @@ function show(which){
   $('actBuat').classList.toggle('hide', which!=='buat');
   $('actRiw').classList.toggle('hide', which!=='riwayat');
   $('actBulk').classList.toggle('hide', which!=='bulk');
+  $('actDS').classList.toggle('hide', which!=='ds');
   $('actRack').classList.toggle('hide', which!=='rack');
   $('bottomBar').classList.toggle('hide', which==='menu');
   $('tabsPenerimaan').classList.toggle('hide', state.modul!=='penerimaan');
@@ -697,12 +743,14 @@ function show(which){
     : which==='koli' ? 'Sesi '+(state.kiriman? state.kiriman.vendor : '')
     : which==='buat' ? (state.editNo? 'Edit '+state.editNo : (bulkMode? 'Koli bulk baru' : 'Koli baru'))
     : which==='bulk' ? '🏬 Gudang Bulk'
+    : which==='ds' ? ('🧩 '+(state.dsNo||'Dead stock'))
     : which==='ambil' ? '📤 Transaksi Bulk'
     : which==='rack' ? '🗺️ Master Rack' : '🖨️ Label';
   if(which==='menu'){ renderMenu(); }
   if(which==='sesi'){ renderSesi(); }
   if(which==='koli'){ renderKoliList(); }
-  if(which==='bulk'){ renderBulk(); }
+  if(which==='bulk'){ if(!state.bn.length && !state.ds.length) loadBulk(false); renderBulk(); }
+  if(which==='ds'){ renderDS(); setTimeout(function(){ $('dQ').focus(); }, 60); }
   if(which==='ambil'){ renderAmbilLog(); setTimeout(function(){ $('aQ').focus(); }, 60); }
   if(which==='rack'){ if(!state.rack.length) loadRack(); else renderRack(); setTimeout(function(){ $('rQ').focus(); }, 60); }
   if(which==='riwayat'){ if(!state.koli.length) loadKoli(true); else renderKoli(); }
@@ -710,6 +758,7 @@ function show(which){
 }
 
 function goBack(){
+  if(state.screen==='ds'){ show('bulk'); return; }
   if(state.screen==='buat'){
     if(draft.items.length && !state.editNo && !confirm('Koli ini belum disimpan. Tinggalkan?')) return;
     show(state.modul==='bulk' ? 'bulk' : (state.sesiNo? 'koli' : 'sesi'));
@@ -729,13 +778,14 @@ function pilihModul(m){
 }
 
 function renderMenu(){
-  var bulk = state.koli.filter(function(k){ return k.tipe==='BULK' && k.status!=='BATAL'; });
-  var ada = bulk.filter(function(k){ return k.isi!=='HABIS'; }).length;
-  var hariIni = state.koli.filter(function(k){ return k.tanggal===todayStr() && k.tipe!=='BULK'; }).length;
+  var hariIni = state.koli.filter(function(k){ return k.tanggal===todayStr() && k.status!=='BATAL'; }).length;
+  var dus = state.bn.reduce(function(a,b){ return a+num(b.sisa); }, 0);
+  var dsAda = state.ds.filter(function(d){ return d.isi!=='HABIS'; }).length;
   $('menuStat').innerHTML = '<div class="stat" style="margin:0">'+
     '<div><b>'+hariIni+'</b><s>koli diterima hari ini</s></div>'+
-    '<div><b>'+ada+'</b><s>koli bulk masih ada isi</s></div>'+
-    '<div><b>'+state.ambil.length+'</b><s>pengambilan tercatat</s></div></div>';
+    '<div><b>'+dus+'</b><s>dus bulk tersisa</s></div>'+
+    '<div><b>'+dsAda+'</b><s>koli dead stock</s></div>'+
+    '<div><b>'+state.ambil.length+'</b><s>pengambilan</s></div></div>';
 }
 
 /* ---------- daftar sesi ---------- */
@@ -1157,58 +1207,471 @@ function printKardus(){
   cetak(h, 'A4');
 }
 
-/* ---------- GUDANG BULK ---------- */
+/* ================= MODUL 2: GUDANG BULK (terpisah dari penerimaan) =================
+   NORMAL     : 1 SKU = 1 baris, yang dicatat JUMLAH DUS → 1 label per dus.
+   DEAD STOCK : koli bernomor DS-xxxx, isinya beberapa SKU.                        */
+/* satu SKU boleh ada di beberapa rak → identitas baris = kode + rak */
+function bnId(x){ return x.kode+'@'+(x.rak||''); }
+function bnCari(id){
+  return state.bn.filter(function(x){ return bnId(x)===id; })[0];
+}
+
+function setBulkData(o){
+  if(!o) return;                     // balasan tanpa bagian bulk → jangan hapus data yang sudah ada
+  var b = o;
+  state.bn = b.normal||[];
+  state.ds = b.ds||[];
+  state.dsItem = {};
+  (b.dsItem||[]).forEach(function(r){
+    var no=r[0]; if(!state.dsItem[no]) state.dsItem[no]=[];
+    state.dsItem[no].push({kode:r[1], nama:r[2], satuan:r[3], qty:num(r[4]), diambil:num(r[5]), sisa:num(r[6])});
+  });
+}
+
+function loadBulk(pesan){
+  return postExec({action:'bulk'}, 2, 60000).then(function(o){
+    if(!o.bulk){ if(pesan) toast('Backend belum mendukung modul bulk baru — paste ulang Code.gs', 4000); return; }
+    setBulkData(o.bulk); renderBulk();
+    if(pesan) toast(state.bn.length+' SKU normal · '+state.ds.length+' koli dead stock');
+  }).catch(function(e){ if(pesan) toast('Gagal memuat: '+e.message, 3200); });
+}
+
+function setBMode(m){ state.bMode=m; state.sel={}; $('bQ').value=''; renderBulk(); }
+
+function renderBulk(){
+  if(!$('bList')) return;
+  var mode = state.bMode||'normal';
+  $('bMode').innerHTML = ['normal','dead'].map(function(m){
+    return '<span class="pill'+(mode===m?' on':'')+'" onclick="setBMode(\''+m+'\')">'+
+      (m==='normal'? '📦 Normal (per dus)' : '🧩 Dead stock (campur)')+'</span>';
+  }).join('');
+  $('btnBulkTambah').textContent = mode==='normal' ? '➕ Tambah SKU' : '➕ Koli dead stock baru';
+  $('bJudul').firstChild.nodeValue = mode==='normal' ? '📦 SKU di gudang bulk ' : '🧩 Koli dead stock ';
+  bulkCari();
+  var q = norm($('bQ').value||''), f = state.bFilter||'';
+  var h='';
+  if(mode==='normal'){
+    var list = state.bn.filter(function(x){
+      if(f==='ada' && num(x.sisa)<=0) return false;
+      if(f==='habis' && num(x.sisa)>0) return false;
+      if(q && norm(x.kode+' '+x.nama).indexOf(q)<0) return false;
+      return true;
+    });
+    h = list.slice(0,300).map(function(x){
+      var habis = num(x.sisa)<=0, id = bnId(x);
+      return '<div class="kcard'+(state.sel[id]?' sel':'')+'" id="bc_'+esc(id)+'">'+
+        '<input type="checkbox" class="ck" '+(state.sel[id]?'checked':'')+' onchange="toggleSelBulk(\''+esc(id)+'\',this.checked)">'+
+        '<div class="b" onclick="editBN(\''+esc(id)+'\')">'+
+          '<div class="kno">'+esc(x.nama||x.kode)+' <span class="bstat '+(habis?'b-hab':'b-ada')+'">sisa '+num(x.sisa)+' dus</span>'+
+            '<span class="bstat b-seb">'+(x.rak? 'RAK '+esc(x.rak) : 'belum dirak')+'</span></div>'+
+          '<div class="kmeta">'+esc(x.kode)+' • '+num(x.dus)+' dus'+(num(x.isi)? ' @'+num(x.isi)+' '+esc(x.satuan||'pcs'):'')+
+            (num(x.diambil)?' • '+num(x.diambil)+' diambil':'')+'</div>'+
+        '</div>'+
+        '<button class="qbtn" onclick="event.stopPropagation();pindahRak(\''+esc(id)+'\')" title="Pindah rak">↔️</button>'+
+        '<button class="qbtn" onclick="event.stopPropagation();printBNLabel(\''+esc(id)+'\')" title="Cetak label">🖨️</button>'+
+      '</div>';
+    }).join('');
+    $('bCount').textContent = list.length? '· '+list.length+' baris' : '';
+    state.bulkTampil = list.map(bnId);
+  } else {
+    var ls = state.ds.filter(function(x){
+      if(f==='ada' && x.isi==='HABIS') return false;
+      if(f==='habis' && x.isi!=='HABIS') return false;
+      if(q){
+        var its=(state.dsItem[x.no]||[]).map(function(i){return norm(i.nama+' '+i.kode);}).join(' ');
+        if((norm(x.no+' '+(x.catatan||''))+' '+its).indexOf(q)<0) return false;
+      }
+      return true;
+    });
+    h = ls.slice(0,300).map(function(x){
+      var its = state.dsItem[x.no]||[];
+      var sisa = its.reduce(function(a,b){ return a+num(b.sisa); },0);
+      var prev = its.slice(0,2).map(function(i){ return esc(i.nama||i.kode)+' ×'+num(i.sisa); }).join(', ');
+      if(its.length>2) prev += ' +'+(its.length-2);
+      return '<div class="kcard'+(state.sel[x.no]?' sel':'')+'" id="bc_'+esc(x.no)+'">'+
+        '<input type="checkbox" class="ck" '+(state.sel[x.no]?'checked':'')+' onchange="toggleSelBulk(\''+x.no+'\',this.checked)">'+
+        '<div class="b" onclick="openDS(\''+x.no+'\')">'+
+          '<div class="kno">'+esc(x.no)+' <span class="muted">'+its.length+' SKU · sisa '+sisa+'</span>'+
+            '<span class="bstat '+(x.isi==='HABIS'?'b-hab':(x.isi==='SEBAGIAN'?'b-seb':'b-ada'))+'">'+esc((x.isi||'ADA').toLowerCase())+'</span></div>'+
+          '<div class="kmeta">'+(prev||'—')+' • '+dmy(x.tanggal)+'</div>'+
+        '</div>'+
+        '<button class="qbtn" onclick="event.stopPropagation();openDS(\''+x.no+'\')" title="Buka">›</button>'+
+      '</div>';
+    }).join('');
+    $('bCount').textContent = ls.length? '· '+ls.length+' koli' : '';
+    state.bulkTampil = ls.map(function(x){ return x.no; });
+  }
+  $('bList').innerHTML = h || '<div class="muted">Belum ada data. Tekan tombol tambah di bawah.</div>';
+  $('bFilter').innerHTML = [['','Semua'],['ada','Masih ada'],['habis','Habis']].map(function(x){
+    return '<span class="pill'+(f===x[0]?' on':'')+'" onclick="setBFilter(\''+x[0]+'\')">'+x[1]+'</span>';
+  }).join('');
+  updatePrintBulk();
+}
+
+/* pencarian barang di layar bulk (untuk menambah data) */
+function bulkCari(){
+  var box = $('bRes'); if(!box) return;
+  var v = $('bQ').value.trim();
+  if(!v || (state.bMode||'normal')!=='normal'){ box.innerHTML=''; return; }
+  var toks = norm(v).split(' ').filter(Boolean);
+  var out=[];
+  for(var i=0;i<state.master.length && out.length<600;i++){
+    var s = score(state.master[i], toks);
+    if(s>=0) out.push([s, state.master[i]]);
+  }
+  out.sort(function(a,b){ return b[0]-a[0]; });
+  box.innerHTML = out.slice(0,8).map(function(p){
+    var o=p[1];
+    return '<div class="it" onclick="tanyaDus(state.master['+o.i+'])">'+
+      '<div class="n">'+hl(o.nama,toks)+'</div><div class="m">'+hl(o.kode,toks)+(o.satuan?' • '+esc(o.satuan):'')+'</div></div>';
+  }).join('');
+}
+
+function bulkTambah(){
+  if((state.bMode||'normal')==='normal'){ $('bQ').focus(); toast('Cari atau scan barangnya dulu'); }
+  else buatDS();
+}
+
+/* --- NORMAL: input jumlah dus --- */
+function tanyaDus(o, rakAwal){
+  var barisSKU = state.bn.filter(function(x){ return x.kode===o.kode; });
+  var ada = rakAwal!=null ? barisSKU.filter(function(x){ return (x.rak||'')===rakAwal; })[0] : null;
+  state.pendBulk = o;
+  var sudah = barisSKU.length
+    ? '<br>Sudah terdata di: '+barisSKU.map(function(x){ return (x.rak? 'rak '+esc(x.rak) : 'belum dirak')+' '+num(x.sisa)+'/'+num(x.dus)+' dus'; }).join(' · ')
+    : '';
+  $('detBox').innerHTML = '<div class="grab"></div>'+
+    '<h3>'+esc(o.nama||o.kode)+'</h3>'+
+    '<div class="muted">'+esc(o.kode)+(o.satuan?' • '+esc(o.satuan):'')+sudah+'</div>'+
+    '<label class="lb">Jumlah dus</label>'+
+    '<div class="row"><button class="qbtn" onclick="dusStep(-1)">−</button>'+
+      '<input type="number" id="dusIn" inputmode="numeric" value="1" style="text-align:center;font-size:20px;font-weight:800">'+
+      '<button class="qbtn" onclick="dusStep(1)">+</button></div>'+
+    '<div style="margin-top:8px">'+[1,2,4,5,10,20].map(function(n){
+      return '<span class="pill" onclick="$(\'dusIn\').value='+n+'">'+n+'</span>'; }).join('')+'</div>'+
+    '<label class="lb">Isi 1 dus berapa '+(o.satuan||'pcs')+'? (tercetak di label)</label>'+
+    '<input type="number" id="dusIsi" inputmode="numeric" placeholder="mis. 50" value="'+(ada&&num(ada.isi)?num(ada.isi):'')+'">'+
+    '<label class="lb">Lokasi rak (jadi kunci barisnya · tercetak di label)</label>'+
+    '<input type="text" id="dusRak" placeholder="mis. 3B — kosongkan kalau belum dirak" value="'+esc(ada?ada.rak:'')+'" oninput="cekRakBaris()">'+
+    '<div class="muted" id="rakInfo" style="margin-top:4px"></div>'+
+    '<div style="height:10px"></div>'+
+    '<button class="btn" onclick="simpanDus(\'tambah\')">➕ Simpan / tambah dus</button>'+
+    '<div style="height:8px"></div><button class="btn sec" onclick="simpanDus(\'ganti\')">✏️ Ganti jadi angka ini</button>'+
+    '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backDet\')">Batal</button>';
+  showEl('backDet');
+  cekRakBaris();
+  setTimeout(function(){ var el=$('dusIn'); if(el) el.select(); }, 80);
+}
+function dusStep(d){ $('dusIn').value = Math.max(1, num($('dusIn').value)+d); }
+
+/* beri tahu apakah rak yang diketik menambah baris lama atau membuat baris baru */
+function cekRakBaris(){
+  var o = state.pendBulk, el = $('rakInfo'); if(!o || !el) return;
+  var rak = ($('dusRak').value||'').trim();
+  var ada = state.bn.filter(function(x){ return x.kode===o.kode && (x.rak||'').toUpperCase()===rak.toUpperCase(); })[0];
+  el.innerHTML = ada
+    ? '↑ menambah baris yang sudah ada di '+(rak? 'rak '+esc(rak) : '“belum dirak”')+' (sekarang '+num(ada.dus)+' dus)'
+    : '＋ akan jadi baris baru untuk '+(rak? 'rak '+esc(rak) : '“belum dirak”');
+}
+
+function simpanDus(mode){
+  var o = state.pendBulk; if(!o) return;
+  var dus = num($('dusIn').value), rak = $('dusRak').value.trim(), isi = num($('dusIsi').value);
+  if(dus<=0){ toast('Jumlah dus harus > 0'); return; }
+  hide('backDet');
+  // baris ditentukan oleh KODE + RAK
+  var ada = state.bn.filter(function(x){ return x.kode===o.kode && (x.rak||'').toUpperCase()===rak.toUpperCase(); })[0];
+  var backup = ada? {dus:ada.dus, sisa:ada.sisa, isi:ada.isi} : null;
+  if(ada){
+    ada.dus = (mode==='ganti') ? dus : num(ada.dus)+dus;
+    ada.sisa = ada.dus - num(ada.diambil);
+    if(isi) ada.isi = isi;
+  } else {
+    ada = {kode:o.kode, nama:o.nama, satuan:o.satuan, isi:isi, dus:dus, diambil:0, sisa:dus,
+           status:'ADA', rak:rak, pic:state.user, waktu:'', catatan:''};
+    state.bn.unshift(ada);
+    state.sel[bnId(ada)]=1;                     // baru didata → ikut tercentang untuk dicetak
+  }
+  $('bQ').value=''; renderBulk();
+  toast(o.kode+(rak? ' @rak '+rak:'')+' → '+num(ada.dus)+' dus');
+  postExec({action:'bulksimpan', kode:o.kode, nama:o.nama, satuan:o.satuan, dus:dus, isi:isi, mode:mode,
+            rak:rak, pic:state.user}, 3, 25000)
+  .then(function(r){ if(!r.ok) throw new Error(r.error||'gagal'); })
+  .catch(function(e){
+    if(backup){ ada.dus=backup.dus; ada.sisa=backup.sisa; ada.isi=backup.isi; }
+    else state.bn = state.bn.filter(function(x){ return x!==ada; });
+    renderBulk(); alert('Gagal menyimpan: '+e.message);
+  });
+}
+
+function editBN(id){
+  var x = bnCari(id); if(!x) return;
+  var master = state.byKode[normCode(x.kode)] || {kode:x.kode, nama:x.nama, satuan:x.satuan};
+  tanyaDus(master, x.rak||'');
+}
+
+/* ---- pindah dus antar rak ---- */
+function pindahRak(id){
+  var x = bnCari(id); if(!x) return;
+  if(num(x.sisa)<=0){ toast('Tidak ada sisa dus di baris ini'); return; }
+  state.pendPindah = id;
+  $('detBox').innerHTML = '<div class="grab"></div>'+
+    '<h3>↔️ Pindah rak</h3>'+
+    '<div class="muted">'+esc(x.nama||x.kode)+'<br>dari '+(x.rak? '<b>rak '+esc(x.rak)+'</b>' : '<b>belum dirak</b>')+' · sisa '+num(x.sisa)+' dus</div>'+
+    '<label class="lb">Berapa dus dipindah?</label>'+
+    '<div class="row"><button class="qbtn" onclick="pindahStep(-1)">−</button>'+
+      '<input type="number" id="pdDus" inputmode="numeric" value="'+num(x.sisa)+'" style="text-align:center;font-size:20px;font-weight:800">'+
+      '<button class="qbtn" onclick="pindahStep(1)">+</button></div>'+
+    '<label class="lb">Rak tujuan</label>'+
+    '<input type="text" id="pdRak" placeholder="mis. 5A" autocomplete="off">'+
+    '<div style="height:10px"></div>'+
+    '<button class="btn" onclick="kirimPindah()">✅ Pindahkan</button>'+
+    '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backDet\')">Batal</button>';
+  showEl('backDet');
+  setTimeout(function(){ var el=$('pdRak'); if(el) el.focus(); }, 80);
+}
+function pindahStep(d){
+  var x = bnCari(state.pendPindah)||{};
+  $('pdDus').value = Math.max(1, Math.min(num(x.sisa), num($('pdDus').value)+d));
+}
+function kirimPindah(){
+  var x = bnCari(state.pendPindah); if(!x) return;
+  var dus = Math.min(num($('pdDus').value), num(x.sisa));
+  var ke = ($('pdRak').value||'').trim();
+  if(dus<=0){ toast('Jumlah dus tidak valid'); return; }
+  if(!ke){ toast('Isi rak tujuan dulu'); return; }
+  if(ke.toUpperCase()===(x.rak||'').toUpperCase()){ toast('Rak tujuan sama dengan asalnya'); return; }
+  hide('backDet');
+  var dari = x.rak||'';
+  var backup = {dus:x.dus, sisa:x.sisa};
+  x.dus = num(x.dus)-dus; x.sisa = num(x.sisa)-dus;
+  var tuj = state.bn.filter(function(y){ return y.kode===x.kode && (y.rak||'').toUpperCase()===ke.toUpperCase(); })[0];
+  var tujBaru = false;
+  if(tuj){ tuj.dus = num(tuj.dus)+dus; tuj.sisa = num(tuj.sisa)+dus; }
+  else {
+    tuj = {kode:x.kode, nama:x.nama, satuan:x.satuan, isi:x.isi, dus:dus, diambil:0, sisa:dus,
+           status:'ADA', rak:ke, pic:state.user, waktu:'', catatan:''};
+    state.bn.unshift(tuj); tujBaru = true;
+  }
+  if(num(x.dus)<=0) state.bn = state.bn.filter(function(y){ return y!==x; });
+  renderBulk();
+  toast(dus+' dus '+x.kode+' → rak '+ke);
+  postExec({action:'bulkpindah', kode:x.kode, dari:dari, ke:ke, dus:dus, pic:state.user, clientId:uuid()}, 3, 30000)
+  .then(function(o){ if(!o.ok) throw new Error(o.error||'gagal'); })
+  .catch(function(e){
+    x.dus=backup.dus; x.sisa=backup.sisa;
+    if(state.bn.indexOf(x)<0) state.bn.unshift(x);
+    if(tujBaru) state.bn = state.bn.filter(function(y){ return y!==tuj; });
+    else { tuj.dus=num(tuj.dus)-dus; tuj.sisa=num(tuj.sisa)-dus; }
+    renderBulk(); alert('Gagal memindah: '+e.message);
+  });
+}
+
+/* --- DEAD STOCK --- */
+function buatDS(){
+  if(!confirm('Buat koli dead stock baru?')) return;
+  postExec({action:'dsbuat', pic:state.user, items:[]}, 2, 30000).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+    state.ds.unshift({no:o.no, tanggal:todayStr(), sku:0, qty:0, isi:'ADA', pic:state.user, waktu:'', catatan:''});
+    state.dsItem[o.no] = [];
+    renderBulk(); openDS(o.no);
+    toast('Koli '+o.no+' dibuat — tambahkan isinya');
+  }).catch(function(e){ alert('Gagal membuat koli: '+e.message); });
+}
+
+function openDS(no){
+  var d = state.ds.filter(function(x){ return x.no===no; })[0]; if(!d) return;
+  state.dsNo = no; show('ds');
+}
+
+function renderDS(){
+  var no = state.dsNo;
+  var d = state.ds.filter(function(x){ return x.no===no; })[0];
+  if(!d){ show('bulk'); return; }
+  var its = state.dsItem[no]||[];
+  var sisa = its.reduce(function(a,b){ return a+num(b.sisa); },0);
+  $('dsHead').innerHTML = '<div class="kno">'+esc(no)+' <span class="bstat '+(d.isi==='HABIS'?'b-hab':(d.isi==='SEBAGIAN'?'b-seb':'b-ada'))+'">'+esc((d.isi||'ADA').toLowerCase())+'</span></div>'+
+    '<div class="kmeta">'+dmy(d.tanggal)+(d.pic? ' • '+esc(d.pic):'')+'</div>'+
+    '<div class="stat" style="margin-top:8px;margin-bottom:0"><div><b>'+its.length+'</b><s>SKU</s></div>'+
+      '<div><b>'+its.reduce(function(a,b){return a+num(b.qty);},0)+'</b><s>qty awal</s></div>'+
+      '<div><b>'+sisa+'</b><s>sisa</s></div></div>'+
+    '<div style="margin-top:8px"><button class="lnk" style="color:var(--err)" onclick="hapusDS(\''+no+'\')">🗑️ Hapus koli ini</button></div>';
+  $('dCount').textContent = its.length? '· '+its.length+' SKU' : '';
+  $('dList').innerHTML = its.map(function(i,idx){
+    var habis = num(i.sisa)<=0;
+    return '<div class="arow'+(habis?' off':'')+'"><div class="g"><div class="n">'+esc(i.nama||i.kode)+'</div>'+
+      '<div class="s">'+esc(i.kode)+' • '+num(i.qty)+(i.satuan? ' '+esc(i.satuan):'')+' • sisa '+num(i.sisa)+'</div></div>'+
+      '<button class="del" onclick="hapusDSItem('+idx+')" title="Hapus dari koli">🗑️</button></div>';
+  }).join('') || '<div class="muted">Belum ada isinya. Cari/scan barang di atas.</div>';
+  dsCari();
+}
+
+function dsCari(){
+  var box = $('dRes'); if(!box) return;
+  var v = $('dQ').value.trim();
+  if(!v){ box.innerHTML=''; return; }
+  var toks = norm(v).split(' ').filter(Boolean);
+  var out=[];
+  for(var i=0;i<state.master.length && out.length<600;i++){
+    var s = score(state.master[i], toks);
+    if(s>=0) out.push([s, state.master[i]]);
+  }
+  out.sort(function(a,b){ return b[0]-a[0]; });
+  box.innerHTML = out.slice(0,8).map(function(p){
+    var o=p[1];
+    return '<div class="it" onclick="tanyaQtyDS(state.master['+o.i+'])">'+
+      '<div class="n">'+hl(o.nama,toks)+'</div><div class="m">'+hl(o.kode,toks)+(o.satuan?' • '+esc(o.satuan):'')+'</div></div>';
+  }).join('');
+}
+
+function tanyaQtyDS(o){
+  state.pend = o;
+  $('qtyName').textContent = o.nama||o.kode;
+  $('qtyMeta').textContent = [o.kode,o.satuan].filter(Boolean).join(' • ');
+  $('qtyIn').value = 1;
+  $('qtyQuick').innerHTML = [1,2,5,10,12,20,24,50].map(function(n){
+    return '<span class="pill" onclick="$(\'qtyIn\').value='+n+'">'+n+'</span>'; }).join('');
+  state.qtyMode = 'ds';
+  showEl('backQty');
+  setTimeout(function(){ var el=$('qtyIn'); if(el) el.select(); }, 80);
+}
+
+function tambahItemDS(){
+  var o = state.pend, q = num($('qtyIn').value);
+  if(!o || q<=0){ toast('Qty harus > 0'); return; }
+  var no = state.dsNo;
+  hide('backQty');
+  var arr = state.dsItem[no] = state.dsItem[no]||[];
+  var ex = arr.filter(function(x){ return x.kode===o.kode && x.nama===o.nama; })[0];
+  if(ex){ ex.qty=num(ex.qty)+q; ex.sisa=num(ex.sisa)+q; }
+  else arr.push({kode:o.kode, nama:o.nama, satuan:o.satuan, qty:q, diambil:0, sisa:q});
+  var d = state.ds.filter(function(x){ return x.no===no; })[0];
+  if(d){ d.sku=arr.length; d.qty=arr.reduce(function(a,b){return a+num(b.qty);},0); }
+  $('dQ').value=''; renderDS();
+  toast(o.kode+' ×'+q+' masuk '+no);
+  postExec({action:'dsitem', no:no, pic:state.user, items:[{kode:o.kode,nama:o.nama,satuan:o.satuan,qty:q}]}, 3, 25000)
+    .then(function(r){ if(!r.ok) throw new Error(r.error||'gagal'); })
+    .catch(function(e){ alert('Gagal menambah isi: '+e.message); loadBulk(false); });
+}
+
+function hapusDS(no){
+  var its = state.dsItem[no]||[];
+  if(its.some(function(i){ return num(i.diambil)>0; })){ toast('Koli ini sudah ada pengambilannya', 3200); return; }
+  if(!confirm('Hapus koli '+no+' beserta '+its.length+' barisnya?')) return;
+  state.ds = state.ds.filter(function(x){ return x.no!==no; });
+  delete state.dsItem[no];
+  show('bulk');
+  postExec({action:'dshapus', no:no}, 2).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+  }).catch(function(e){ alert('Gagal menghapus: '+e.message); loadBulk(false); });
+}
+
+function hapusDSItem(idx){
+  var no = state.dsNo, arr = state.dsItem[no]||[];
+  var it = arr[idx]; if(!it) return;
+  if(num(it.diambil)>0){ toast('Barang ini sudah pernah diambil', 3200); return; }
+  if(!confirm('Hapus "'+(it.nama||it.kode)+'" dari '+no+'?')) return;
+  arr.splice(idx,1);
+  var d = state.ds.filter(function(x){ return x.no===no; })[0];
+  if(d){ d.sku=arr.length; d.qty=arr.reduce(function(a,b){return a+num(b.qty);},0); }
+  renderDS();
+  postExec({action:'dshapusitem', no:no, kode:it.kode, nama:it.nama}, 2)
+    .then(function(o){ if(!o.ok) throw new Error(o.error||'gagal'); })
+    .catch(function(e){ alert('Gagal menghapus: '+e.message); loadBulk(false); });
+}
+
+/* --- CETAK: label 10×6 cm, 8 per lembar A4 ---
+   Label barang: nama SKU besar, kode + QR, isi per dus, dan lokasi rak. */
+function labelBarangHTML(kode, nama, isiPcs, satuan, lokasi, perDus){
+  var isi = num(isiPcs) > 0 ? (num(isiPcs)+' '+(satuan||'pcs')+(perDus===false?'':' / dus')) : (satuan? esc(satuan) : '');
+  return '<div class="blabel"><div class="bq">'+qrSvg(kode)+'</div>'+
+    '<div class="bt">'+
+      '<div class="bn'+(String(nama||'').length>46?' kecil':'')+'">'+esc(nama)+'</div>'+
+      '<div class="bk">'+esc(kode)+'</div>'+
+      (isi? '<div class="bx">'+isi+'</div>' : '')+
+      (lokasi? '<div class="brak">'+esc(lokasi)+'</div>' : '')+
+    '</div></div>';
+}
+/* Label dus dead stock: tanpa barcode, cukup nomornya besar */
+function labelDusDSHTML(no, ket){
+  return '<div class="blabel polos"><div class="dsno">'+esc(no)+'</div>'+
+    '<div class="dsket">'+esc(ket||'')+'</div></div>';
+}
+
+function printBNLabel(id){
+  var x = bnCari(id); if(!x) return;
+  cetakBulk([x]);
+}
+function printBulk(){
+  var mode = state.bMode||'normal';
+  var dipilih = (state.bulkTampil||[]).filter(function(k){ return state.sel[k]; });
+  if(!dipilih.length) dipilih = (state.bulkTampil||[]).slice();
+  if(!dipilih.length){ toast('Tidak ada yang dicetak'); return; }
+  if(mode==='normal'){
+    cetakBulk(state.bn.filter(function(x){ return dipilih.indexOf(bnId(x))>=0; }));
+    return;
+  }
+  withQR(function(){                                   // dead stock → label dus (tanpa barcode)
+    var h = dipilih.map(function(no){
+      var d = state.ds.filter(function(x){ return x.no===no; })[0];
+      if(!d) return '';
+      var its = state.dsItem[no]||[];
+      return labelDusDSHTML(no, dmy(d.tanggal)+' · '+its.length+' SKU · '+its.reduce(function(a,b){return a+num(b.qty);},0)+' pcs');
+    }).join('');
+    cetak('<div class="bsheet">'+h+'</div>', 'A4');
+  });
+}
+function cetakBulk(list){
+  withQR(function(){
+    var h = '', total = 0;
+    list.forEach(function(x){
+      var n = Math.max(1, num(x.dus));                 // 1 label per dus, isinya sama semua
+      for(var i=1;i<=n;i++) h += labelBarangHTML(x.kode, x.nama, x.isi, x.satuan, x.rak? ('RAK '+x.rak) : '');
+      total += n;
+    });
+    cetak('<div class="bsheet">'+h+'</div>', 'A4');
+    toast(total+' label · '+Math.ceil(total/8)+' lembar A4');
+  });
+}
+/* dead stock: label per SKU, bentuknya sama dengan label normal */
+function printDSSKU(){
+  var no = state.dsNo, its = state.dsItem[no]||[];
+  if(!its.length){ toast('Koli ini belum ada isinya'); return; }
+  withQR(function(){
+    var h = its.map(function(i){ return labelBarangHTML(i.kode, i.nama, i.qty, i.satuan, no, false); }).join('');
+    cetak('<div class="bsheet">'+h+'</div>', 'A4');
+    toast(its.length+' label SKU · '+Math.ceil(its.length/8)+' lembar A4');
+  });
+}
+function printDSLabel(){
+  var no = state.dsNo, d = state.ds.filter(function(x){ return x.no===no; })[0]; if(!d) return;
+  var its = state.dsItem[no]||[];
+  cetak('<div class="bsheet">'+labelDusDSHTML(no, dmy(d.tanggal)+' · '+its.length+' SKU · '+
+        its.reduce(function(a,b){return a+num(b.qty);},0)+' pcs')+'</div>', 'A4');
+}
+/* label besar: daftar isi koli dead stock, 1 lembar A4 per koli */
+function printDSList(){
+  var no = state.dsNo, d = state.ds.filter(function(x){ return x.no===no; })[0]; if(!d) return;
+  var its = state.dsItem[no]||[];
+  if(!its.length){ toast('Koli ini belum ada isinya'); return; }
+  withQR(function(){
+    var h = '<div class="l6box"><div style="display:flex;gap:6mm;align-items:center;margin-bottom:4mm">'+
+      '<div style="width:28mm">'+qrSvg(no)+'</div>'+
+      '<div><h2 style="margin:0;font-size:22pt">'+esc(no)+'</h2>'+
+      '<div style="font-size:11pt">DEAD STOCK · '+dmy(d.tanggal)+' · '+its.length+' SKU · total '+its.reduce(function(a,b){return a+num(b.qty);},0)+'</div></div></div>'+
+      '<table class="l6tab"><thead><tr><th>No</th><th>Kode</th><th>Nama Barang</th><th>Qty</th></tr></thead><tbody>'+
+      its.map(function(i,n){ return '<tr><td>'+(n+1)+'</td><td>'+esc(i.kode)+'</td><td>'+esc(i.nama)+'</td><td>'+num(i.qty)+(i.satuan?' '+esc(i.satuan):'')+'</td></tr>'; }).join('')+
+      '</tbody></table></div>';
+    cetak(h, 'A4');
+  });
+}
+
 function isiBadge(k){
   var s = k.isi||'ADA';
   var cls = s==='HABIS' ? 'b-hab' : (s==='SEBAGIAN' ? 'b-seb' : 'b-ada');
   return '<span class="bstat '+cls+'">'+(s==='SEBAGIAN'?'sebagian':(s==='HABIS'?'habis':'ada'))+'</span>';
 }
 
-function renderBulk(){
-  var q = norm($('bQ').value||''), f = state.bFilter||'';
-  var all = state.koli.filter(function(k){ return k.tipe==='BULK' && k.status!=='BATAL'; });
-  var list = all.filter(function(k){
-    if(f==='ada' && k.isi==='HABIS') return false;
-    if(f==='habis' && k.isi!=='HABIS') return false;
-    if(q){
-      var its = state.items[k.no]||[];
-      var hay = norm(k.no+' '+(k.catatan||''))+' '+its.map(function(i){return norm(i.nama+' '+i.kode);}).join(' ');
-      if(hay.indexOf(q)<0) return false;
-    }
-    return true;
-  });
-  $('bFilter').innerHTML = ['','ada','habis'].map(function(x){
-    var lb = x===''?'Semua':(x==='ada'?'Masih ada isi':'Sudah habis');
-    return '<span class="pill'+(f===x?' on':'')+'" onclick="setBFilter(\''+x+'\')">'+lb+'</span>';
-  }).join('');
-  var h = list.slice(0,300).map(function(k){
-    var its = state.items[k.no]||[];
-    var sisa = its.reduce(function(a,b){ return a+num(b.sisa!=null?b.sisa:b.qty); },0);
-    var prev = its.slice(0,2).map(function(i){
-      var s = num(i.sisa!=null?i.sisa:i.qty);
-      return esc(i.nama||i.kode)+' '+(s>0? '×'+s : '<s>habis</s>');
-    }).join(', ');
-    if(its.length>2) prev += ' +'+(its.length-2);
-    var sync = k.sync==='kirim' ? '<span class="badge">menyimpan…</span>'
-             : k.sync==='gagal' ? '<span class="badge void">gagal kirim</span>' : '';
-    return '<div class="kcard'+(state.sel[k.no]?' sel':'')+'" id="bc_'+esc(k.no)+'">'+
-      (k.sync? '' : '<input type="checkbox" class="ck" '+(state.sel[k.no]?'checked':'')+
-        ' onchange="toggleSelBulk(\''+k.no+'\',this.checked)" title="Pilih untuk dicetak">')+
-      '<div class="b" onclick="'+(k.sync==='kirim'?'':'openKoliEdit(\''+k.no+'\')')+'">'+
-        '<div class="kno">'+esc(k.no)+' <span class="muted">'+its.length+' SKU · sisa '+sisa+'</span>'+isiBadge(k)+sync+'</div>'+
-        '<div class="kmeta">'+(prev||'—')+' • '+dmy(k.tanggal)+'</div>'+
-      '</div>'+
-      (k.sync==='gagal'? '<button class="qbtn" onclick="event.stopPropagation();ulangKirim(\''+k.no+'\')">↻</button>'
-        : (k.sync==='kirim'? '' :
-          '<button class="qbtn" onclick="event.stopPropagation();printKoli([\''+k.no+'\'])" title="Cetak label">🖨️</button>'+
-          '<button class="qbtn" onclick="event.stopPropagation();mulaiAmbil(\''+k.no+'\')" title="Ambil barang">📤</button>'))+
-    '</div>';
-  }).join('');
-  $('bList').innerHTML = h || '<div class="muted">Belum ada koli bulk yang cocok. Tekan “Koli baru”.</div>';
-  $('bCount').textContent = list.length? '· '+list.length : '';
-  state.bulkTampil = list.map(function(k){ return k.no; });
-  updatePrintBulk();
-}
 function setBFilter(f){ state.bFilter=f; renderBulk(); }
 
 /* pilih koli bulk untuk dicetak borongan (label barang lama) */
@@ -1218,10 +1681,8 @@ function toggleSelBulk(no, on){
   updatePrintBulk();
 }
 function selAllBulk(on){
-  (state.bulkTampil||[]).forEach(function(no){
-    var k = state.koli.filter(function(x){ return x.no===no; })[0];
-    if(k && k.sync) return;                    // yang belum selesai tersimpan tak bisa dicetak
-    if(on) state.sel[no]=1; else delete state.sel[no];
+  (state.bulkTampil||[]).forEach(function(id){
+    if(on) state.sel[id]=1; else delete state.sel[id];
   });
   renderBulk();
 }
@@ -1233,30 +1694,7 @@ function updatePrintBulk(){
   var b = $('btnPrintBulk'); if(!b) return;
   b.textContent = n ? ('🖨️ Cetak '+n+' label') : ('🖨️ Cetak semua ('+tot+')');
 }
-function printBulk(){
-  var nos = terpilihBulk();
-  if(!nos.length) nos = (state.bulkTampil||[]).filter(function(no){
-    var k = state.koli.filter(function(x){ return x.no===no; })[0];
-    return k && !k.sync;
-  });
-  if(!nos.length){ toast('Tidak ada koli untuk dicetak'); return; }
-  if(nos.length>60 && !confirm('Akan mencetak '+nos.length+' label. Lanjut?')) return;
-  printKoli(nos);
-}
 
-function newKoliBulk(){
-  state.modul = 'bulk'; state.editNo = null; state.editFoto = ''; state.sesiNo='';
-  if(draft.items.length && confirm('Ada koli yang belum tersimpan ('+draft.items.length+' item). Lanjutkan yang itu?')){
-    show('buat'); renderCart(); renderThumbs(); return;
-  }
-  draft.items=[]; draft.photos=[]; draft.catatan=''; draft.cid=null; draft.tanggal=todayStr();
-  $('dNote').value=''; $('dNote').classList.add('hide'); $('q').value='';
-  draftSave(); renderCart(); renderThumbs(); runSearch();
-  $('edTitle').textContent = 'Koli bulk baru';
-  $('kirInfo').textContent = 'Gudang bulk — tanpa vendor/surat jalan';
-  $('btnSubmit').textContent = '✅ Simpan Koli';
-  show('buat');
-}
 
 /* ---------- SCAN AMBIL BARANG (bulk → etalase) ---------- */
 function mulaiAmbil(no){
@@ -1267,13 +1705,147 @@ function mulaiAmbil(no){
 function cariKoliAmbil(){
   var no = String($('aQ').value||'').trim().toUpperCase();
   if(!no) return;
+  var d = state.ds.filter(function(x){ return x.no.toUpperCase()===no; })[0];
+  if(d){ bukaDSAmbil(d); return; }               // DS-xxxx → koli dead stock
   var k = state.koli.filter(function(x){ return x.no.toUpperCase()===no; })[0];
-  if(!k){ toast('Koli '+no+' tidak ditemukan — tekan ↻ di menu untuk memuat data', 3200); return; }
+  if(k){ bukaKoliAmbil(k); return; }             // K-xxxx → koli penerimaan
+  cariBarangAmbil(no);                           // selain itu → barcode barang
+}
+
+/* dead stock: pilih SKU & qty, lalu kirim */
+function bukaDSAmbil(d){
+  var its = (state.dsItem[d.no]||[]).map(function(i){
+    return {kode:i.kode, nama:i.nama, satuan:i.satuan, qty:num(i.qty), sisa:num(i.sisa), ambil:num(i.sisa), ikut:num(i.sisa)>0};
+  });
+  if(!its.filter(function(i){return i.sisa>0;}).length){ toast('Koli '+d.no+' sudah habis'); return; }
+  state.ambilKoli = {koli:{no:d.no, vendor:'DEAD STOCK', tanggal:d.tanggal, catatan:d.catatan, isi:d.isi}, items:its, sumber:d.no};
+  renderAmbilBox(state.ambilKoli.koli, its);
+}
+
+/* Scan barcode BARANG (Ex-Code) → cari dus bulk yang berisi SKU itu.
+   Untuk dus bulk normal (1 SKU) inilah cara ambilnya — dusnya tak perlu berlabel. */
+function cariBarangAmbil(kode){
+  var key = normCode(kode);
+  // 1) gudang bulk normal — satuannya DUS; satu SKU bisa ada di beberapa rak
+  var bns = state.bn.filter(function(x){ return normCode(x.kode)===key && num(x.sisa)>0; });
+  if(bns.length===1){ ambilDus(bns[0]); return; }
+  if(bns.length>1){
+    $('detBox').innerHTML = '<div class="grab"></div><h3>📦 Ada di '+bns.length+' rak</h3>'+
+      '<div class="muted">'+esc(bns[0].nama)+'</div><div style="height:8px"></div>'+
+      bns.map(function(x){
+        return '<div class="kirrow" onclick="hide(\'backDet\');ambilDus(bnCari(\''+esc(bnId(x))+'\'))">'+
+          '<div class="g"><div class="n">'+(x.rak? 'RAK '+esc(x.rak) : 'belum dirak')+' <span class="muted">sisa '+num(x.sisa)+' dus</span></div>'+
+          '<div class="m">'+esc(x.kode)+(num(x.isi)? ' • '+num(x.isi)+' '+esc(x.satuan||'pcs')+'/dus':'')+'</div></div></div>';
+      }).join('')+'<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+    showEl('backDet');
+    return;
+  }
+  // 2) isi koli dead stock
+  var dsCocok = [];
+  state.ds.forEach(function(d){
+    (state.dsItem[d.no]||[]).forEach(function(i){
+      if(normCode(i.kode)===key && num(i.sisa)>0) dsCocok.push({d:d, i:i});
+    });
+  });
+  if(dsCocok.length===1){ bukaDSAmbil(dsCocok[0].d); return; }
+  if(dsCocok.length>1){
+    $('detBox').innerHTML = '<div class="grab"></div><h3>🧩 Ada di '+dsCocok.length+' koli dead stock</h3>'+
+      '<div class="muted">'+esc(dsCocok[0].i.nama)+'</div><div style="height:8px"></div>'+
+      dsCocok.map(function(c){
+        return '<div class="kirrow" onclick="hide(\'backDet\');$(\'aQ\').value=\''+c.d.no+'\';cariKoliAmbil()">'+
+          '<div class="g"><div class="n">'+esc(c.d.no)+' <span class="muted">sisa '+num(c.i.sisa)+'</span></div>'+
+          '<div class="m">'+dmy(c.d.tanggal)+(c.d.catatan? ' • '+esc(c.d.catatan):'')+'</div></div></div>';
+      }).join('')+'<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+    showEl('backDet');
+    return;
+  }
+  // 3) koli penerimaan (inbound) yang belum habis
+  var cocok = [];
+  state.koli.forEach(function(k){
+    if(k.status==='BATAL' || k.sync) return;
+    (state.items[k.no]||[]).forEach(function(i){
+      var sisa = num(i.sisa!=null? i.sisa : i.qty);
+      if(sisa>0 && (normCode(i.kode)===key || normCode(i.barcode||'')===key)) cocok.push({k:k, i:i, sisa:sisa});
+    });
+  });
+  if(!cocok.length){
+    var m = state.byKode[key] || state.byBar[key];
+    toast(m ? ('"'+m.nama+'" tidak ada sisanya di koli mana pun') : ('Tidak ketemu: '+kode), 3600);
+    return;
+  }
+  if(cocok.length===1){ bukaKoliAmbil(cocok[0].k, cocok[0].i.kode); return; }
+  // satu SKU ada di beberapa dus → tim memilih dusnya
+  var nama = cocok[0].i.nama;
+  $('detBox').innerHTML = '<div class="grab"></div><h3>📦 Ada di '+cocok.length+' dus</h3>'+
+    '<div class="muted">'+esc(nama)+'</div><div style="height:8px"></div>'+
+    cocok.map(function(c){
+      var r = (state.rackByKode[normCode(c.i.kode)]||{}).alamat||'';
+      return '<div class="kirrow" onclick="hide(\'backDet\');bukaKoliAmbil(state.koli.filter(function(x){return x.no===\''+c.k.no+'\';})[0],\''+c.i.kode+'\')">'+
+        '<div class="g"><div class="n">'+esc(c.k.no)+' <span class="muted">sisa '+c.sisa+'</span></div>'+
+        '<div class="m">'+esc(c.k.tipe==='BULK'?(c.k.jenis||'BULK'):'INBOUND')+(r? ' • rak '+esc(r):'')+(c.k.catatan? ' • '+esc(c.k.catatan):'')+'</div></div></div>';
+    }).join('')+
+    '<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+  showEl('backDet');
+}
+
+/* bulk normal: ambil per DUS */
+function ambilDus(bn){
+  if(!bn) return;
+  $('detBox').innerHTML = '<div class="grab"></div>'+
+    '<h3>📦 '+esc(bn.nama||bn.kode)+'</h3>'+
+    '<div class="muted">'+esc(bn.kode)+' • sisa <b>'+num(bn.sisa)+' dus</b>'+(bn.rak? ' • <b>RAK '+esc(bn.rak)+'</b>':' • belum dirak')+
+      (num(bn.isi)? ' • '+num(bn.isi)+' '+esc(bn.satuan||'pcs')+'/dus':'')+'</div>'+
+    '<label class="lb">Ambil berapa dus?</label>'+
+    '<div class="row"><button class="qbtn" onclick="ambilDusStep(-1)">−</button>'+
+      '<input type="number" id="ambDus" inputmode="numeric" value="1" style="text-align:center;font-size:20px;font-weight:800">'+
+      '<button class="qbtn" onclick="ambilDusStep(1)">+</button></div>'+
+    '<div style="margin-top:8px">'+[1,2,3,5,10].filter(function(n){ return n<=num(bn.sisa); })
+      .map(function(n){ return '<span class="pill" onclick="$(\'ambDus\').value='+n+'">'+n+'</span>'; }).join('')+
+      '<span class="pill" onclick="$(\'ambDus\').value='+num(bn.sisa)+'">semua ('+num(bn.sisa)+')</span></div>'+
+    '<div style="height:10px"></div>'+
+    '<button class="btn" onclick="kirimAmbilDus(\''+esc(bnId(bn))+'\')">✅ Ambil ke '+esc(state.tujuan)+'</button>'+
+    '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backDet\')">Batal</button>';
+  showEl('backDet');
+  state.pendBulk = bn;
+  setTimeout(function(){ var el=$('ambDus'); if(el) el.select(); }, 80);
+}
+function ambilDusStep(d){
+  var bn = state.pendBulk||{};
+  $('ambDus').value = Math.max(1, Math.min(num(bn.sisa), num($('ambDus').value)+d));
+}
+function kirimAmbilDus(id){
+  var bn = bnCari(id); if(!bn) return;
+  var q = Math.min(num($('ambDus').value), num(bn.sisa));
+  if(q<=0){ toast('Jumlah dus tidak valid'); return; }
+  hide('backDet');
+  var lama = {diambil:num(bn.diambil), sisa:num(bn.sisa)};
+  bn.diambil = lama.diambil + q; bn.sisa = lama.sisa - q;
+  state.ambil.unshift({no:'…', tanggal:todayStr(), waktu:'', koli:'BULK NORMAL'+(bn.rak? ' · RAK '+bn.rak:''), kode:bn.kode,
+                       nama:bn.nama, qty:q, sisa:bn.sisa, tujuan:state.tujuan, pic:state.user});
+  $('aQ').value=''; renderAmbilLog(); if(state.screen==='bulk') renderBulk();
+  toast('Mengambil '+q+' dus '+bn.kode+(bn.rak? ' dari rak '+bn.rak:'')+'…');
+  postExec({action:'bulkambil', sumber:'NORMAL', clientId:uuid(), pic:state.user, tujuan:state.tujuan,
+            items:[{kode:bn.kode, nama:bn.nama, rak:bn.rak||'', qty:q}]}, 3, 30000)
+  .then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+    state.ambil.forEach(function(a){ if(a.no==='…' && a.kode===bn.kode) a.no=o.noAmbil||'-'; });
+    renderAmbilLog();
+    toast(o.noAmbil+' tercatat · '+q+' dus');
+  }).catch(function(e){
+    bn.diambil=lama.diambil; bn.sisa=lama.sisa;
+    state.ambil = state.ambil.filter(function(a){ return a.no!=='…'; });
+    renderAmbilLog(); alert('Gagal mencatat pengambilan: '+e.message);
+  });
+}
+
+function bukaKoliAmbil(k, fokusKode){
+  if(!k) return;
   if(k.status==='BATAL'){ toast('Koli ini dibatalkan'); return; }
   if(k.sync){ toast('Koli ini belum selesai tersimpan'); return; }
   var its = (state.items[k.no]||[]).map(function(i){
     var sisa = num(i.sisa!=null? i.sisa : i.qty);
-    return {kode:i.kode, nama:i.nama, satuan:i.satuan, qty:num(i.qty), sisa:sisa, ambil:sisa, ikut:sisa>0};
+    var fokus = !fokusKode || normCode(i.kode)===normCode(fokusKode);
+    return {kode:i.kode, nama:i.nama, satuan:i.satuan, qty:num(i.qty), sisa:sisa, ambil:sisa, ikut:sisa>0 && fokus};
   });
   var adaSisa = its.filter(function(i){ return i.sisa>0; });
   if(!adaSisa.length){ toast('Koli '+k.no+' sudah habis'); renderAmbilBox(k, its); return; }
@@ -1323,10 +1895,14 @@ function kirimAmbil(otomatis){
   var s = state.ambilKoli; if(!s) return;
   var ambil = s.items.filter(function(i){ return i.ikut && num(i.ambil)>0 && i.sisa>0; });
   if(!ambil.length){ toast('Tidak ada barang yang dipilih'); return; }
-  var payload = {action:'ambil', no:s.koli.no, pic:state.user, tujuan:state.tujuan,
-    clientId: uuid(), items: ambil.map(function(i){ return {kode:i.kode, nama:i.nama, qty:num(i.ambil)}; })};
+  var dsMode = !!s.sumber;                       // koli dead stock → aksi bulkambil
+  var payload = dsMode
+    ? {action:'bulkambil', sumber:s.sumber, pic:state.user, tujuan:state.tujuan, clientId: uuid(),
+       items: ambil.map(function(i){ return {kode:i.kode, nama:i.nama, qty:num(i.ambil)}; })}
+    : {action:'ambil', no:s.koli.no, pic:state.user, tujuan:state.tujuan, clientId: uuid(),
+       items: ambil.map(function(i){ return {kode:i.kode, nama:i.nama, qty:num(i.ambil)}; })};
   // terapkan dulu di layar (cepat), kirim di latar
-  var its = state.items[s.koli.no]||[];
+  var its = dsMode ? (state.dsItem[s.sumber]||[]) : (state.items[s.koli.no]||[]);
   ambil.forEach(function(a){
     var it = its.filter(function(x){ return x.kode===a.kode && x.nama===a.nama; })[0];
     if(it){ it.sisa = num(it.sisa!=null?it.sisa:it.qty) - num(a.ambil); }
@@ -1334,6 +1910,10 @@ function kirimAmbil(otomatis){
   var sisaTotal = its.reduce(function(x,y){ return x+num(y.sisa!=null?y.sisa:y.qty); },0);
   var adaAmbil = its.some(function(y){ return num(y.qty)-num(y.sisa!=null?y.sisa:y.qty) > 0; });
   s.koli.isi = sisaTotal<=0 ? 'HABIS' : (adaAmbil? 'SEBAGIAN' : 'ADA');
+  if(dsMode){
+    var dd = state.ds.filter(function(x){ return x.no===s.sumber; })[0];
+    if(dd) dd.isi = s.koli.isi;
+  }
   var jml = ambil.reduce(function(a,b){ return a+num(b.ambil); },0);
   ambil.forEach(function(a){
     state.ambil.unshift({no:'…', tanggal:todayStr(), waktu:'', koli:s.koli.no, kode:a.kode, nama:a.nama,
@@ -1394,6 +1974,7 @@ function openKoliEdit(no){
   state.editNo = no; state.editFoto = k.foto||'';
   draft.items = its.map(function(i){ return {kode:i.kode, nama:i.nama, satuan:i.satuan, qty:num(i.qty)}; });
   draft.photos = []; draft.catatan = k.catatan||''; draft.cid = null; draft.tanggal = k.tanggal;
+  draft.jenis = k.jenis || (k.tipe==='BULK'? 'NORMAL':'');
   $('dNote').value = draft.catatan;
   $('dNote').classList.toggle('hide', !draft.catatan);
   $('q').value='';
@@ -1496,6 +2077,22 @@ function bindSearch(){
   var t=null;
   $('aQ').addEventListener('keydown', function(e){
     if(e.key==='Enter'){ e.preventDefault(); cariKoliAmbil(); }
+  });
+  var tb=null;
+  $('bQ').addEventListener('input', function(){ clearTimeout(tb); tb=setTimeout(bulkCari,110); });
+  $('bQ').addEventListener('keydown', function(e){
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    var hit = state.byKode[normCode($('bQ').value.trim())] || state.byBar[normCode($('bQ').value.trim())];
+    if(hit && (state.bMode||'normal')==='normal') tanyaDus(hit);
+  });
+  var td=null;
+  $('dQ').addEventListener('input', function(){ clearTimeout(td); td=setTimeout(dsCari,110); });
+  $('dQ').addEventListener('keydown', function(e){
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    var hit = state.byKode[normCode($('dQ').value.trim())] || state.byBar[normCode($('dQ').value.trim())];
+    if(hit) tanyaQtyDS(hit);
   });
   var tr=null;
   $('rQ').addEventListener('input', function(){ clearTimeout(tr); tr=setTimeout(renderRack,110); });
@@ -1686,14 +2283,23 @@ function askQty(o){
     return '<span class="pill" onclick="$(\'qtyIn\').value='+n+'">'+n+'</span>';
   }).join('');
   showEl('backQty');
-  setTimeout(function(){ $('qtyIn').select(); }, 80);
+  setTimeout(function(){ var el=$('qtyIn'); if(el) el.select(); }, 80);
 }
 function qtyStep(d){ $('qtyIn').value = Math.max(1, num($('qtyIn').value)+d); }
 function qtyConfirm(){
+  if(state.qtyMode==='ds'){ state.qtyMode=''; tambahItemDS(); return; }
   var q = num($('qtyIn').value);
   if(q<=0){ toast('Qty harus > 0'); return; }
   var o = state.pend; if(!o) return;
   var ex = draft.items.filter(function(x){ return x.kode===o.kode && x.nama===o.nama; })[0];
+  // dus bulk normal dikunci 1 SKU
+  var bulkNormal = (state.modul==='bulk' || (state.editNo && (state.koli.filter(function(k){return k.no===state.editNo;})[0]||{}).tipe==='BULK'))
+                   && (draft.jenis||'NORMAL')==='NORMAL';
+  if(!ex && bulkNormal && draft.items.length>=1){
+    hide('backQty');
+    toast('Dus bulk normal hanya boleh 1 SKU — ubah jenisnya jadi Dead stock kalau memang campur', 4200);
+    return;
+  }
   if(ex){ ex.qty += q; toast('Qty digabung → '+ex.qty); }
   else draft.items.push({kode:o.kode, barcode:o.barcode, nama:o.nama, satuan:o.satuan, qty:q});
   hide('backQty'); draftSave(); renderCart();
@@ -1745,6 +2351,7 @@ function submitKoli(){
     no: state.editNo || '',
     clientId: draft.cid || (draft.cid = uuid()),
     tipe: bulk? 'BULK' : 'PENERIMAAN',
+    jenis: bulk? (draft.jenis||'NORMAL') : '',
     tanggal: draft.tanggal, kiriman: bulk? '' : (state.kiriman? state.kiriman.no : ''), pic: state.user, catatan: draft.catatan,
     photos: draft.photos.map(function(d){ return String(d).split('base64,')[1] || ''; }),
     items: draft.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan, qty:num(it.qty)}; })
@@ -1762,7 +2369,7 @@ function submitKoli(){
     kol = {no:key, tanggal:draft.tanggal, vendor: bulk? 'GUDANG BULK' : ((state.kiriman&&state.kiriman.vendor)||''),
            pic:state.user, sku:items.length, qty:qty, catatan:draft.catatan, status:'OK', foto:'',
            kiriman: bulk? '' : ((state.kiriman&&state.kiriman.no)||''), sj: bulk? '' : ((state.kiriman&&state.kiriman.sj)||''),
-           tipe: bulk? 'BULK':'PENERIMAAN', isi:'ADA', sync:'kirim'};
+           tipe: bulk? 'BULK':'PENERIMAAN', isi:'ADA', jenis: bulk?(draft.jenis||'NORMAL'):'', sync:'kirim'};
     state.koli.unshift(kol);
   }
   items.forEach(function(i){ if(i.sisa==null) i.sisa = num(i.qty); });
@@ -1894,6 +2501,7 @@ function setKoliData(o){
                           diambil:num(r[5]), sisa:(r.length>6? num(r[6]) : num(r[4]))});
   });
   if(o.ambil) state.ambil = o.ambil;
+  if(o.bulk) setBulkData(o.bulk);
   fillFilters();
 }
 
@@ -2211,6 +2819,14 @@ function openScan(modeKoli, target){
         if(state.scanKoli){                       // scan QR label koli → buka isinya untuk diambil
           state._last=txt; state._lastT=Date.now();
           closeScan(); $('aQ').value = String(txt).trim(); cariKoliAmbil();
+          return;
+        }
+        if(state.scanTarget==='bulk' || state.scanTarget==='ds'){   // scan barang untuk didata di bulk
+          var b = state.byKode[normCode(txt)] || state.byBar[normCode(txt)];
+          state._last=txt; state._lastT=Date.now();
+          closeScan();
+          if(!b){ toast('Kode tidak ada di master: '+txt, 3200); return; }
+          if(state.scanTarget==='ds') tanyaQtyDS(b); else tanyaDus(b);
           return;
         }
         if(state.scanTarget==='rack'){            // scan barcode item → buka editor posisi rak
