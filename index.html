@@ -376,10 +376,10 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 <div class="wrap hide" id="scAmbil">
   <div class="card">
     <div class="row">
-      <input type="search" id="aQ" placeholder="Scan barcode barang / no koli (K-0007)" autocomplete="off">
+      <input type="search" id="aQ" placeholder="Scan barcode / ketik nama barang / DS-0001" autocomplete="off">
       <button class="btn sec sm" onclick="openScanKoli()" title="Scan QR koli / barcode barang">📷</button>
     </div>
-    <div class="muted" style="margin-top:5px">Dus <b>normal</b>: scan barcode barangnya. Dus <b>dead stock</b> (campur): scan QR di label kolinya.</div>
+    <div class="muted" style="margin-top:5px">Dus <b>normal</b>: scan barcode barangnya (kalau labelnya rusak, <b>ketik namanya</b> lalu Enter). Dus <b>dead stock</b> (campur): scan QR di label kolinya.</div>
   </div>
   <div class="card hide" id="ambilBox"></div>
   <div class="card">
@@ -2066,8 +2066,10 @@ function cariBarangAmbil(kode){
     });
   });
   if(!cocok.length){
+    // bukan kode/barcode → cari berdasarkan NAMA di stok bulk (label sobek, scanner mati, dll)
+    if(cariNamaAmbil(kode)) return;
     var m = state.byKode[key] || state.byBar[key];
-    toast(m ? ('"'+m.nama+'" tidak ada sisanya di koli mana pun') : ('Tidak ketemu: '+kode), 3600);
+    toast(m ? ('"'+m.nama+'" tidak ada sisanya di gudang bulk') : ('Tidak ketemu: '+kode), 3600);
     return;
   }
   if(cocok.length===1){ bukaKoliAmbil(cocok[0].k, cocok[0].i.kode); return; }
@@ -2083,6 +2085,48 @@ function cariBarangAmbil(kode){
     }).join('')+
     '<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
   showEl('backDet');
+}
+
+/* Cari barang di stok bulk berdasarkan NAMA (bukan kode) — dipakai kalau
+   barcodenya tak terbaca. Hasilnya langsung menampilkan rak & sisa dusnya. */
+function cariNamaAmbil(teks){
+  var toks = norm(teks).split(' ').filter(Boolean);
+  if(!toks.length) return false;
+  var cocok = function(s){
+    var t = norm(s);
+    for(var i=0;i<toks.length;i++) if(t.indexOf(toks[i])<0) return false;
+    return true;
+  };
+  var hasil = [];
+  state.bn.forEach(function(x){
+    if(num(x.sisa)>0 && cocok(x.kode+' '+x.nama)) hasil.push({tipe:'bn', x:x});
+  });
+  state.ds.forEach(function(d){
+    (state.dsItem[d.no]||[]).forEach(function(i){
+      if(num(i.sisa)>0 && cocok(i.kode+' '+i.nama)) hasil.push({tipe:'ds', d:d, i:i});
+    });
+  });
+  if(!hasil.length) return false;
+  if(hasil.length===1){
+    if(hasil[0].tipe==='bn') ambilDus(hasil[0].x); else bukaDSAmbil(hasil[0].d);
+    return true;
+  }
+  $('detBox').innerHTML = '<div class="grab"></div><h3>🔎 '+hasil.length+' barang cocok</h3>'+
+    '<div class="muted">hasil pencarian "'+esc(teks)+'" di stok bulk</div><div style="height:8px"></div>'+
+    hasil.slice(0,25).map(function(c){
+      if(c.tipe==='bn'){
+        return '<div class="kirrow" onclick="hide(\'backDet\');ambilDus(bnCari(\''+esc(bnId(c.x))+'\'))">'+
+          '<div class="g"><div class="n">'+esc(c.x.nama||c.x.kode)+'</div>'+
+          '<div class="m">'+(c.x.rak? 'RAK '+esc(c.x.rak) : 'belum dirak')+' • sisa '+num(c.x.sisa)+' dus • '+esc(c.x.kode)+'</div></div></div>';
+      }
+      return '<div class="kirrow" onclick="hide(\'backDet\');$(\'aQ\').value=\''+c.d.no+'\';cariKoliAmbil()">'+
+        '<div class="g"><div class="n">'+esc(c.i.nama||c.i.kode)+'</div>'+
+        '<div class="m">'+esc(c.d.no)+' (dead stock) • sisa '+num(c.i.sisa)+' '+esc(c.i.satuan||'pcs')+'</div></div></div>';
+    }).join('')+
+    (hasil.length>25? '<div class="muted" style="padding:6px 4px">…dan '+(hasil.length-25)+' lagi, ketik lebih spesifik</div>':'')+
+    '<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+  showEl('backDet');
+  return true;
 }
 
 /* bulk normal: ambil per DUS */
