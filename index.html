@@ -217,6 +217,29 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 .blabel.polos .dsno{font-size:38pt;font-weight:bold;letter-spacing:1px;line-height:1}
 .blabel.polos .dsket{font-size:13pt;margin-top:3mm}
 
+/* ===== stiker barcode 60×40 mm — A3 melintang, 6 kolom × 7 baris = 42/lembar =====
+   6×60 = 360 mm (muat di 420 mm) · 7×40 = 280 mm (muat di 297 mm) → paling irit. */
+/* satu lembar = judul tipis (5,5mm) + grid stiker (280mm) = 285,5mm,
+   masih muat di tinggi cetak A3 melintang (287mm) → susunan 6×7 tidak berubah */
+.slembar{width:360mm;margin:0 auto;background:#fff;page-break-after:always;break-after:page}
+.slembar:last-child{page-break-after:auto;break-after:auto}
+.sjudul{height:5mm;display:flex;align-items:center;gap:3mm;overflow:hidden;white-space:nowrap;
+  font-family:Arial,Helvetica,sans-serif;font-size:7pt;color:#000;line-height:1}
+.sjudul b{font-size:8pt;letter-spacing:.2px}
+.sjudul .jm{margin-left:auto;color:#444}
+.spage{width:360mm;display:flex;flex-wrap:wrap;background:#fff}
+.slabel{width:60mm;height:40mm;padding:2mm;box-sizing:border-box;background:#fff;color:#000;
+  font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:1.5mm;overflow:hidden;border:.35mm solid #000;
+  page-break-inside:avoid;break-inside:avoid}
+.slabel .sq{width:19mm;height:19mm;flex:none}
+.slabel .sq svg{width:19mm;height:19mm;display:block}
+.slabel .sn{font-size:8.5pt;font-weight:bold;line-height:1.12;text-align:center;
+  max-height:13mm;overflow:hidden;width:100%}
+.slabel .sn.t2{font-size:7.5pt}
+.slabel .sn.t3{font-size:6.5pt}
+.slabel .sn.t4{font-size:5.8pt}
+
 /* label QR Master Rack 60×40 mm */
 .qrlabel{width:60mm;height:40mm;padding:2.5mm;box-sizing:border-box;background:#fff;color:#000;
   font-family:Arial,Helvetica,sans-serif;display:flex;gap:2mm;align-items:center;overflow:hidden;
@@ -318,7 +341,36 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <div class="muted">Database acuan relokasi bin — hanya dilihat, tidak diubah</div></div>
     <span class="muted">›</span>
   </div>
+  <div class="menucard" onclick="pilihModul('stiker')">
+    <div class="mi">🏷️</div>
+    <div class="mg"><div class="mt">Print Barcode</div>
+      <div class="muted">Stiker QR 6×4 cm untuk item yang stoknya tidak nol — 42 per lembar A3</div></div>
+    <span class="muted">›</span>
+  </div>
   <div class="card" id="menuStat"></div>
+</div>
+
+<!-- ============ PRINT BARCODE (stiker QR) ============ -->
+<div class="wrap hide" id="scStiker">
+  <div class="card">
+    <div class="row">
+      <input type="search" id="tQ" placeholder="🔎 Cari nama / kode / brand…" autocomplete="off">
+      <button class="btn sec sm" onclick="hapusCariStiker()" title="Bersihkan">✕</button>
+    </div>
+    <div class="row" style="margin-top:7px">
+      <select id="tBrand" onchange="setStikerBrand(this.value)"></select>
+    </div>
+    <div class="muted" id="tInfo" style="margin-top:5px"></div>
+  </div>
+  <div class="card">
+    <div class="stat" id="tStat" style="margin-bottom:0"></div>
+  </div>
+  <div class="card">
+    <h2>🏷️ Daftar stiker <span class="muted" id="tCount"></span><span class="sp2"></span>
+      <button class="lnk" onclick="selAllStiker(true)">Pilih semua</button>
+      <button class="lnk" onclick="selAllStiker(false)">Bersihkan</button></h2>
+    <div id="tList"></div>
+  </div>
 </div>
 
 <!-- ============ BIN INSTALLATION (hanya baca) ============ -->
@@ -331,6 +383,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     <div id="nFilter" style="margin-top:7px"></div>
     <div class="row" style="margin-top:7px">
       <select id="nBrand" onchange="setBinBrand(this.value)"></select>
+      <select id="nRecom" onchange="setBinRecom(this.value)"></select>
     </div>
     <div class="muted" id="nInfo" style="margin-top:5px"></div>
   </div>
@@ -538,6 +591,9 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     <button class="btn sec" onclick="rackSummary()">📊 Ringkasan</button>
     <button class="btn" onclick="rackPrintMenu()">🖨️ Cetak</button>
   </div>
+  <div class="actbar hide" id="actStiker">
+    <button class="btn" id="btnPrintStiker" onclick="cetakStiker()">🖨️ Cetak stiker</button>
+  </div>
   <div class="actbar hide" id="actBulk">
     <button class="btn" id="btnBulkTambah" onclick="bulkTambah()">➕ Tambah</button>
     <button class="btn sec" id="btnPrintBulk" onclick="printBulk()">🖨️ Cetak label</button>
@@ -631,7 +687,7 @@ var DEFAULT_PICS = [
 ];
 var KIRIMAN_WAJIB = true;  // tiap koli harus menempel ke satu kiriman (vendor + no surat jalan)
 var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1',
-          kiriman:'tk_kiriman', pending:'tk_pending', rack:'tk_rack_v1', antre:'tk_antre_v1', bin:'tk_bin_v1'};
+          kiriman:'tk_kiriman', pending:'tk_pending', rack:'tk_rack_v1', antre:'tk_antre_v1', bin:'tk_bin_v1', stiker:'tk_stiker_v1'};
 /* Jeda pengumpul: operasi yang terjadi dalam rentang ini digabung jadi SATU kiriman.
    Satu panggilan ke Apps Script memakan ±3 detik apa pun isinya, jadi menggabung
    8 simpanan = 3 detik, bukan 24 detik. Nilainya kecil supaya tetap terasa langsung. */
@@ -645,7 +701,8 @@ var state = {
   modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null,
   rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item',
   bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:'',
-  bin:[], binInfo:null, binFilter:'', binBrand:'', binEdit:null, logFilter:'', logPenuh:false,
+  bin:[], binInfo:null, binFilter:'', binBrand:'', binRecom:'', binEdit:null, logFilter:'', logPenuh:false,
+  stiker:[], stikerInfo:null, stikerBrand:'', selStiker:{},
   antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}, rakFilter:''
 };
 
@@ -935,7 +992,7 @@ function enterApp(){
 function show(which){
   state.screen = which;
   var map = {menu:'scMenu', sesi:'scSesi', koli:'scKoli', buat:'scBuat', riwayat:'scRiwayat',
-             bulk:'scBulk', ds:'scDS', ambil:'scAmbil', rack:'scRack', bin:'scBin'};
+             bulk:'scBulk', ds:'scDS', ambil:'scAmbil', rack:'scRack', bin:'scBin', stiker:'scStiker'};
   for(var k in map) $(map[k]).classList.toggle('hide', k!==which);
   var bulkMode = (state.modul==='bulk');
   $('actSesi').classList.toggle('hide', which!=='sesi');
@@ -945,6 +1002,7 @@ function show(which){
   $('actBulk').classList.toggle('hide', which!=='bulk');
   $('actDS').classList.toggle('hide', which!=='ds');
   $('actRack').classList.toggle('hide', which!=='rack');
+  $('actStiker').classList.toggle('hide', which!=='stiker');
   $('bottomBar').classList.toggle('hide', which==='menu');
   $('tabsPenerimaan').classList.toggle('hide', state.modul!=='penerimaan');
   $('tabsLain').classList.toggle('hide', state.modul==='penerimaan');
@@ -960,7 +1018,8 @@ function show(which){
     : which==='ds' ? ('🧩 '+(state.dsNo||'Dead stock'))
     : which==='ambil' ? '📤 Transaksi Bulk'
     : which==='rack' ? '🗺️ Master Rack'
-    : which==='bin' ? '🧱 BIN Installation' : '🖨️ Label';
+    : which==='bin' ? '🧱 BIN Installation'
+    : which==='stiker' ? '🏷️ Print Barcode' : '🖨️ Label';
   if(which==='menu'){ renderMenu(); }
   if(which==='sesi'){ renderSesi(); }
   if(which==='koli'){ renderKoliList(); }
@@ -969,6 +1028,7 @@ function show(which){
   if(which==='ambil'){ renderAmbilLog(); setTimeout(function(){ $('aQ').focus(); }, 60); }
   if(which==='rack'){ if(!state.rack.length) loadRack(); else renderRack(); setTimeout(function(){ $('rQ').focus(); }, 60); }
   if(which==='bin'){ if(!state.bin.length) loadBin(); else renderBin(); setTimeout(function(){ $('nQ').focus(); }, 60); }
+  if(which==='stiker'){ if(!state.stiker.length) loadStiker(); else renderStiker(); setTimeout(function(){ $('tQ').focus(); }, 60); }
   if(which==='riwayat'){ if(!state.koli.length) loadKoli(true); else renderKoli(); }
   if(which==='buat') setTimeout(function(){ $('q').focus(); }, 60);
 }
@@ -992,6 +1052,7 @@ function pilihModul(m){
   else if(m==='bulk') show('bulk');
   else if(m==='rack') show('rack');
   else if(m==='bin') show('bin');
+  else if(m==='stiker') show('stiker');
   else show('ambil');
 }
 
@@ -1151,6 +1212,193 @@ function renderKoliList(){
 }
 
 /* ================= MODUL 4: MASTER RACK ================= */
+/* ================= MODUL 6: PRINT BARCODE (stiker QR 6×4 cm) =================
+   Sumbernya tab master ber-gid khusus, hanya item ber-qty ≠ 0.
+   Cetak di A3 melintang: 6 kolom × 7 baris = 42 stiker per lembar (paling irit). */
+var STIKER_KOL = 6, STIKER_BARIS = 7;             // per lembar A3 melintang
+var STIKER_PER_LEMBAR = STIKER_KOL * STIKER_BARIS;
+
+function loadStiker(){
+  var c=null;
+  try{ c = JSON.parse(localStorage.getItem(LS.stiker)||'null'); }catch(e){}
+  if(c && c.rows && c.rows.length){ setStiker(c.rows, c.info); $('tInfo').textContent = state.stiker.length+' item (tersimpan) — menyegarkan…'; }
+  else $('tInfo').textContent = 'Memuat daftar item…';
+  return postExec({action:'stiker'}, 2, 90000).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+    var rows = (o.stiker&&o.stiker.rows)||[];
+    if(!rows.length){ $('tInfo').textContent = 'Tidak ada item ber-stok di tab itu'; return; }
+    var info = {sheet:o.stiker.sheet, gid:o.stiker.gid, dilewati:o.stiker.dilewati, waktu:o.stiker.waktu};
+    setStiker(rows, info);
+    try{ localStorage.setItem(LS.stiker, JSON.stringify({t:Date.now(), rows:rows, info:info})); }catch(e){}
+    renderStiker();
+  }).catch(function(e){
+    $('tInfo').innerHTML = state.stiker.length? state.stiker.length+' item (tersimpan di HP)'
+      : '<span class="err">Gagal memuat: '+esc(e.message)+'</span>';
+  });
+}
+function setStiker(rows, info){
+  state.stikerInfo = info||{};
+  state.stiker = rows.map(function(r,i){
+    var o = {kode:r[0]||'', nama:r[1]||'', qty:num(r[2]), kategori:r[3]||'', brand:r[4]||'', satuan:r[5]||'', i:i};
+    o._h = norm(o.kode+' '+o.nama+' '+o.brand+' '+o.kategori);
+    return o;
+  });
+}
+function setStikerBrand(v){ state.stikerBrand=v||''; renderStiker(); }
+function hapusCariStiker(){ $('tQ').value=''; state.stikerBrand=''; renderStiker(); $('tQ').focus(); }
+function stikerTampil(){
+  var q = norm($('tQ').value||''), toks = q? q.split(' ').filter(Boolean) : [];
+  var br = state.stikerBrand||'';
+  return state.stiker.filter(function(x){
+    if(br && x.brand.toUpperCase()!==br) return false;
+    if(toks.length){ for(var i=0;i<toks.length;i++) if(x._h.indexOf(toks[i])<0) return false; }
+    return true;
+  });
+}
+function toggleSelStiker(i, on){
+  if(on) state.selStiker[i]=1; else delete state.selStiker[i];
+  var el=$('tc_'+i); if(el) el.classList.toggle('sel', !!on);
+  updateCetakStiker();
+}
+function selAllStiker(on){
+  stikerTampil().forEach(function(x){ if(on) state.selStiker[x.i]=1; else delete state.selStiker[x.i]; });
+  renderStiker();
+}
+function terpilihStiker(){
+  var pilih = stikerTampil().filter(function(x){ return state.selStiker[x.i]; });
+  return pilih.length? pilih : stikerTampil();      // tanpa centang = semua yang tampil
+}
+function updateCetakStiker(){
+  var b = $('btnPrintStiker'); if(!b) return;
+  var n = terpilihStiker().length, lembar = Math.ceil(n/STIKER_PER_LEMBAR);
+  var dicentang = stikerTampil().filter(function(x){ return state.selStiker[x.i]; }).length;
+  b.textContent = '🖨️ Cetak '+n+' stiker · '+lembar+' lembar A3'+(dicentang? '' : ' (semua yang tampil)');
+}
+function renderStiker(){
+  if(!$('tList')) return;
+  var q = norm($('tQ').value||''), toks = q? q.split(' ').filter(Boolean) : [];
+  var list = stikerTampil();
+  var tulis = function(s){ return toks.length? hl(s,toks) : esc(s); };
+  $('tList').innerHTML = list.slice(0,300).map(function(x){
+    return '<div class="kcard'+(state.selStiker[x.i]?' sel':'')+'" id="tc_'+x.i+'">'+
+      '<input type="checkbox" class="ck" '+(state.selStiker[x.i]?'checked':'')+' onchange="toggleSelStiker('+x.i+',this.checked)">'+
+      '<div class="b" onclick="cetakStiker(['+x.i+'])">'+
+        '<div class="kno">'+tulis(x.nama||x.kode)+'</div>'+
+        '<div class="kmeta">'+tulis(x.kode)+(x.brand? ' • '+tulis(x.brand):'')+' • stok <b>'+x.qty+'</b>'+(x.satuan? ' '+esc(x.satuan):'')+'</div>'+
+      '</div>'+
+      '<button class="qbtn" onclick="event.stopPropagation();cetakStiker(['+x.i+'])" title="Cetak stiker ini">🖨️</button>'+
+    '</div>';
+  }).join('') || '<div class="muted">Tidak ada item yang cocok.</div>';
+  $('tCount').textContent = list.length? '· '+list.length+' item'+(list.length>300? ' (300 teratas)':'') : '';
+
+  var hit={};
+  state.stiker.forEach(function(x){ if(x.brand) hit[x.brand.toUpperCase()]=(hit[x.brand.toUpperCase()]||0)+1; });
+  var sel=$('tBrand'), opsi='<option value="">🏷️ Semua brand ('+state.stiker.length+' item)</option>';
+  Object.keys(hit).sort().forEach(function(b){
+    opsi += '<option value="'+esc(b)+'"'+(state.stikerBrand===b?' selected':'')+'>'+esc(b)+' — '+hit[b]+'</option>';
+  });
+  if(sel.innerHTML!==opsi) sel.innerHTML = opsi;
+  sel.value = state.stikerBrand||'';
+
+  var inf = state.stikerInfo||{};
+  $('tStat').innerHTML = '<div><b>'+list.length+'</b><s>item tampil</s></div>'+
+    '<div><b>'+Math.ceil(list.length/STIKER_PER_LEMBAR)+'</b><s>lembar A3</s></div>'+
+    '<div><b>'+STIKER_PER_LEMBAR+'</b><s>stiker/lembar</s></div>';
+  $('tInfo').innerHTML = state.stiker.length+' item ber-stok · sumber tab <b>'+esc(inf.sheet||'-')+'</b>'+
+    (inf.dilewati? ' · '+inf.dilewati+' item stok 0 dilewati' : '')+
+    ' <button class="lnk" onclick="segarkanStiker()">↻ segarkan</button>';
+  updateCetakStiker();
+}
+function segarkanStiker(){
+  $('tInfo').textContent = 'Menyegarkan dari master…';
+  postExec({action:'stiker', fresh:1}, 2, 90000).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+    var rows=(o.stiker&&o.stiker.rows)||[];
+    setStiker(rows, {sheet:o.stiker.sheet, gid:o.stiker.gid, dilewati:o.stiker.dilewati, waktu:o.stiker.waktu});
+    try{ localStorage.setItem(LS.stiker, JSON.stringify({t:Date.now(), rows:rows, info:state.stikerInfo})); }catch(e){}
+    renderStiker(); toast(rows.length+' item disegarkan');
+  }).catch(function(e){ $('tInfo').innerHTML = '<span class="err">Gagal: '+esc(e.message)+'</span>'; });
+}
+
+/* QR dengan KERAPATAN SERAGAM: versinya dikunci (25×25 modul) supaya semua stiker
+   kelihatan sama, tidak tergantung panjang kode. Kode di master maks 10 karakter,
+   jadi masih jauh di bawah kapasitas versi 2 (38 karakter). Kalau suatu saat ada
+   kode yang kepanjangan, otomatis balik ke versi otomatis biar tetap tercetak. */
+var QR_VERSI_STIKER = 2;
+function qrSvgSeragam(teks){
+  try{
+    if(typeof qrcode==='undefined') return '';
+    var q = qrcode(QR_VERSI_STIKER, 'M');
+    q.addData(String(teks));
+    q.make();
+    return q.createSvgTag({cellSize:3, margin:2, scalable:true});
+  }catch(e){ return qrSvg(teks); }
+}
+/* satu stiker 60×40 mm: QR di atas, nama barang di bawahnya (persis contoh dari tim) */
+function stikerHTML(o){
+  return '<div class="slabel"><div class="sq">'+qrSvgSeragam(o.kode||o.nama)+'</div>'+
+    '<div class="sn">'+esc(o.nama||o.kode)+'</div></div>';
+}
+/* urutan cetak: dikelompokkan per KATEGORI → BRAND → nama, biar tidak teracak */
+function urutStiker(daftar){
+  return daftar.slice().sort(function(a,b){
+    var ka = norm(a.kategori||'zzz'), kb = norm(b.kategori||'zzz');
+    if(ka!==kb) return ka<kb? -1 : 1;
+    var ba = norm(a.brand||'zzz'), bb = norm(b.brand||'zzz');
+    if(ba!==bb) return ba<bb? -1 : 1;
+    var na = norm(a.nama), nb = norm(b.nama);
+    return na<nb? -1 : (na>nb? 1 : 0);
+  });
+}
+/* judul tipis satu baris: kategori + brand yang ada di lembar itu + nomor lembar */
+function judulLembar(isi, ke, dari){
+  var kat = {}, brand = {};
+  isi.forEach(function(x){
+    kat[(x.kategori||'TANPA KATEGORI').toUpperCase()] = 1;
+    var b = (x.brand||'TANPA BRAND').toUpperCase();
+    brand[b] = (brand[b]||0)+1;
+  });
+  var namaKat = Object.keys(kat).join(' + ');
+  var daftarBrand = Object.keys(brand).sort().map(function(b){ return b+' ('+brand[b]+')'; }).join(' · ');
+  return '<div class="sjudul"><b>'+esc(namaKat)+'</b><span>'+esc(daftarBrand)+'</span>'+
+    '<span class="jm">'+isi.length+' stiker · lembar '+ke+'/'+dari+' · '+dmy(todayStr())+'</span></div>';
+}
+function cetakStiker(idx){
+  var daftar = idx ? idx.map(function(i){ return state.stiker[i]; }).filter(Boolean) : terpilihStiker();
+  if(!daftar.length){ toast('Tidak ada stiker untuk dicetak'); return; }
+  daftar = urutStiker(daftar);
+  var lembar = Math.ceil(daftar.length/STIKER_PER_LEMBAR);
+  if(daftar.length > 200 && !confirm(daftar.length+' stiker = '+lembar+' lembar A3.\nLanjut cetak?')) return;
+  withQR(function(){
+    var h = '', ke = 0;
+    for(var i=0;i<daftar.length;i+=STIKER_PER_LEMBAR){
+      var isi = daftar.slice(i, i+STIKER_PER_LEMBAR);
+      ke++;
+      h += '<div class="slembar">'+judulLembar(isi, ke, lembar)+
+           '<div class="spage">'+isi.map(stikerHTML).join('')+'</div></div>';
+    }
+    cetak(h, 'A3 landscape', '5mm');
+    paskanNamaStiker();
+    toast(daftar.length+' stiker · '+lembar+' lembar A3 · diurutkan per kategori & brand');
+  });
+}
+/* nama barang dipaskan: ambil ukuran huruf terbesar yang masih muat di stikernya */
+function paskanNamaStiker(){
+  var pr = $('printRoot');
+  var nama = pr.querySelectorAll('.slabel .sn');
+  if(!nama.length) return;
+  var gaya = pr.style.cssText;
+  pr.style.cssText = 'display:block;position:absolute;left:-10000px;top:0';
+  var kelas = ['', 't2', 't3', 't4'];
+  [].forEach.call(nama, function(sn){
+    for(var i=0;i<kelas.length;i++){
+      sn.className = 'sn' + (kelas[i]? ' '+kelas[i] : '');
+      if(sn.scrollHeight <= sn.clientHeight + 1) break;
+    }
+  });
+  pr.style.cssText = gaya;
+}
+
 /* ================= MODUL 5: BIN INSTALLATION (hanya baca) =================
    Database acuan tim saat relokasi bin. Datanya dari file terpisah
    ("BIN INSTALATION 2" → tab LIQUID DATABASE) dan TIDAK PERNAH diubah dari app. */
@@ -1282,16 +1530,32 @@ function kosongkanBinLokasi(){
 }
 function setBinFilter(f){ state.binFilter = f; renderBin(); }
 function setBinBrand(v){ state.binBrand = v||''; renderBin(); }
+function setBinRecom(v){ state.binRecom = v||''; renderBin(); }
+/* "Jumlah Bin Recom" bisa berupa pecahan (1 · 0,5 · 0,25) dan kadang ditulis
+   pakai koma — disamakan dulu supaya bisa dibandingkan & dikelompokkan */
+function angkaRecom(v){
+  var s = String(v==null?'':v).trim().replace(',', '.');
+  if(s==='') return null;
+  var n = parseFloat(s);
+  return isNaN(n)? null : n;
+}
+function tulisRecom(n){ return String(n).replace('.', ','); }
 function hapusCariBin(){
-  $('nQ').value=''; state.binFilter=''; state.binBrand='';
+  $('nQ').value=''; state.binFilter=''; state.binBrand=''; state.binRecom='';
   renderBin(); $('nQ').focus();
 }
 function renderBin(){
   if(!$('nList')) return;
   var q = norm($('nQ').value||''), toks = q? q.split(' ').filter(Boolean) : [];
   var f = state.binFilter||'', br = state.binBrand||'';
+  var rc = state.binRecom||'';
   var list = state.bin.filter(function(x){
     if(br && x.brand.toUpperCase()!==br) return false;
+    if(rc){                                          // saring per jumlah bin yang disarankan
+      var n = angkaRecom(x.recom);
+      if(rc==='(kosong)'){ if(n!==null) return false; }
+      else if(n===null || n!==parseFloat(rc)) return false;
+    }
     if(f==='belum' && binSudah(x)) return false;
     if(f==='sudah' && !binSudah(x)) return false;
     if(f==='bin' && x.simpan.indexOf('NON')>=0) return false;      // hanya yang masuk BIN
@@ -1330,9 +1594,12 @@ function renderBin(){
     return '<span class="pill'+(f===c[0]?' on':'')+'" onclick="setBinFilter(\''+c[0]+'\')">'+c[1]+'</span>';
   }).join('');
   isiPilihanBrand(br);
+  isiPilihanRecom(rc);
 
   var totQty = list.reduce(function(a,b){ return a+num(b.qty); },0);
-  var totBin = list.reduce(function(a,b){ return a+num(b.recom); },0);
+  // recom bisa pecahan & pakai koma → dijumlah lewat angkaRecom, dibulatkan 2 desimal
+  var totBin = list.reduce(function(a,b){ return a + (angkaRecom(b.recom)||0); },0);
+  totBin = tulisRecom(Math.round(totBin*100)/100);
   var sudah = list.filter(binSudah).length;
   $('nStat').innerHTML = '<div><b>'+list.length+'</b><s>SKU</s></div>'+
     '<div><b>'+sudah+'</b><s>sudah dirak</s></div>'+
@@ -1352,6 +1619,25 @@ function isiPilihanBrand(dipilih){
   var nama = Object.keys(hit).sort();
   var opsi = '<option value="">🏷️ Semua brand ('+state.bin.length+' SKU)</option>';
   nama.forEach(function(b){ opsi += '<option value="'+esc(b)+'"'+(dipilih===b?' selected':'')+'>'+esc(b)+' — '+hit[b]+' SKU</option>'; });
+  if(sel.innerHTML !== opsi) sel.innerHTML = opsi;
+  sel.value = dipilih||'';
+}
+/* pilihan "bin recom" diambil dari nilai yang benar-benar ada (1 · 0,5 · 0,25 · dst) */
+function isiPilihanRecom(dipilih){
+  var sel = $('nRecom'); if(!sel) return;
+  var hit = {}, kosong = 0;
+  state.bin.forEach(function(x){
+    var n = angkaRecom(x.recom);
+    if(n===null){ kosong++; return; }
+    hit[n] = (hit[n]||0)+1;
+  });
+  var nilai = Object.keys(hit).map(Number).sort(function(a,b){ return b-a; });
+  var opsi = '<option value="">📦 Semua bin recom</option>';
+  nilai.forEach(function(n){
+    opsi += '<option value="'+n+'"'+(dipilih!=='' && parseFloat(dipilih)===n?' selected':'')+'>'+
+            tulisRecom(n)+' bin — '+hit[n]+' SKU</option>';
+  });
+  if(kosong) opsi += '<option value="(kosong)"'+(dipilih==='(kosong)'?' selected':'')+'>belum ditentukan — '+kosong+' SKU</option>';
   if(sel.innerHTML !== opsi) sel.innerHTML = opsi;
   sel.value = dipilih||'';
 }
@@ -2749,6 +3035,9 @@ function bindSearch(){
     var hit = state.byKode[normCode($('dQ').value.trim())] || state.byBar[normCode($('dQ').value.trim())];
     if(hit) tanyaQtyDS(hit);
   });
+  var tt=null;
+  $('tQ').addEventListener('input', function(){ clearTimeout(tt); tt=setTimeout(renderStiker,110); });
+  $('tQ').addEventListener('keydown', function(e){ if(e.key==='Escape') hapusCariStiker(); });
   var tl=null;
   $('lgQ').addEventListener('input', function(){ clearTimeout(tl); tl=setTimeout(renderAmbilLog,110); });
   $('lgQ').addEventListener('keydown', function(e){ if(e.key==='Escape') hapusCariLog(); });
