@@ -1287,7 +1287,9 @@ function loadStiker(){
     if(!o.ok) throw new Error(o.error||'gagal');
     var rows = (o.stiker&&o.stiker.rows)||[];
     if(!rows.length){ $('tInfo').textContent = 'Tidak ada item ber-stok di tab itu'; return; }
-    var info = {sheet:o.stiker.sheet, gid:o.stiker.gid, dilewati:o.stiker.dilewati, waktu:o.stiker.waktu};
+    var info = {sheet:o.stiker.sheet, gid:o.stiker.gid, dilewati:o.stiker.dilewati,
+                dibaca:o.stiker.dibaca, totalBaris:o.stiker.totalBaris, terpotong:o.stiker.terpotong,
+                waktu:o.stiker.waktu};
     setStiker(rows, info);
     try{ localStorage.setItem(LS.stiker, JSON.stringify({t:Date.now(), rows:rows, info:info})); }catch(e){}
     renderStiker();
@@ -1364,9 +1366,11 @@ function renderStiker(){
   $('tStat').innerHTML = '<div><b>'+list.length+'</b><s>item tampil</s></div>'+
     '<div><b>'+Math.ceil(list.length/STIKER_PER_LEMBAR)+'</b><s>lembar A3</s></div>'+
     '<div><b>'+STIKER_PER_LEMBAR+'</b><s>stiker/lembar</s></div>';
-  $('tInfo').innerHTML = state.stiker.length+' item ber-stok · sumber tab <b>'+esc(inf.sheet||'-')+'</b>'+
-    (inf.dilewati? ' · '+inf.dilewati+' item stok 0 dilewati' : '')+
-    ' <button class="lnk" onclick="segarkanStiker()">↻ segarkan</button>';
+  $('tInfo').innerHTML = angkaID(state.stiker.length)+' item ber-stok · sumber tab <b>'+esc(inf.sheet||'-')+'</b>'+
+    (inf.totalBaris? ' · dibaca '+angkaID(inf.dibaca)+' dari '+angkaID(inf.totalBaris)+' baris' : '')+
+    (inf.dilewati? ' · '+angkaID(inf.dilewati)+' item stok 0 dilewati' : '')+
+    ' <button class="lnk" onclick="segarkanStiker()">↻ segarkan</button>'+
+    (inf.terpotong? '<br><span class="err">⚠️ Sheet-nya lebih panjang dari batas baca — hubungi admin untuk menaikkan batasnya.</span>' : '');
   updateCetakStiker();
 }
 function segarkanStiker(){
@@ -1374,7 +1378,8 @@ function segarkanStiker(){
   postExec({action:'stiker', fresh:1}, 2, 90000).then(function(o){
     if(!o.ok) throw new Error(o.error||'gagal');
     var rows=(o.stiker&&o.stiker.rows)||[];
-    setStiker(rows, {sheet:o.stiker.sheet, gid:o.stiker.gid, dilewati:o.stiker.dilewati, waktu:o.stiker.waktu});
+    setStiker(rows, {sheet:o.stiker.sheet, gid:o.stiker.gid, dilewati:o.stiker.dilewati,
+      dibaca:o.stiker.dibaca, totalBaris:o.stiker.totalBaris, terpotong:o.stiker.terpotong, waktu:o.stiker.waktu});
     try{ localStorage.setItem(LS.stiker, JSON.stringify({t:Date.now(), rows:rows, info:state.stikerInfo})); }catch(e){}
     renderStiker(); toast(rows.length+' item disegarkan');
   }).catch(function(e){ $('tInfo').innerHTML = '<span class="err">Gagal: '+esc(e.message)+'</span>'; });
