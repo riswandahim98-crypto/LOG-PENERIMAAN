@@ -106,6 +106,20 @@ textarea{min-height:56px;resize:vertical}
 .vrow:last-child{border-bottom:0}
 .vrow:active{background:var(--card)}
 
+/* tombol yang bentuknya seperti kotak pilihan, tapi dibuka jadi daftar ber-pencarian */
+.pilih{display:flex;align-items:center;gap:6px;width:100%;background:var(--card);color:var(--tx);
+  border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:14px;text-align:left;cursor:pointer}
+.pilih .pt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pilih .pc{color:var(--tx2);font-size:11px}
+.pilih.on{border-color:var(--acc2);font-weight:600}
+.pcrow{display:flex;gap:8px;align-items:center;padding:10px 6px;border-bottom:1px solid var(--line);cursor:pointer}
+.pcrow:last-child{border-bottom:0}
+.pcrow.on{background:var(--card2);border-radius:9px}
+.pcrow .g{flex:1;min-width:0}
+.pcrow .n{font-weight:600;font-size:14px}
+.pcrow .m{font-size:11.5px;color:var(--tx2)}
+#pcList{max-height:58vh;overflow:auto;margin-top:8px}
+
 .kirrow{display:flex;gap:8px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);cursor:pointer}
 .kirrow:last-child{border-bottom:0}
 .kirrow .g{flex:1;min-width:0}
@@ -357,7 +371,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <button class="btn sec sm" onclick="hapusCariStiker()" title="Bersihkan">✕</button>
     </div>
     <div class="row" style="margin-top:7px">
-      <select id="tBrand" onchange="setStikerBrand(this.value)"></select>
+      <button class="pilih" id="tBrand" onclick="stikerPilihBrand()"></button>
     </div>
     <div class="muted" id="tInfo" style="margin-top:5px"></div>
   </div>
@@ -381,9 +395,9 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     </div>
     <div id="nFilter" style="margin-top:7px"></div>
     <div class="row" style="margin-top:7px;flex-wrap:wrap">
-      <select id="nKat" onchange="setBinKat(this.value)" style="flex:1 1 46%"></select>
-      <select id="nBrand" onchange="setBinBrand(this.value)" style="flex:1 1 46%"></select>
-      <select id="nRecom" onchange="setBinRecom(this.value)" style="flex:1 1 100%"></select>
+      <button class="pilih" id="nKat" onclick="binPilihKategori()" style="flex:1 1 46%"></button>
+      <button class="pilih" id="nBrand" onclick="binPilihBrand()" style="flex:1 1 46%"></button>
+      <button class="pilih" id="nRecom" onclick="binPilihRecom()" style="flex:1 1 100%"></button>
     </div>
     <div class="muted" id="nInfo" style="margin-top:5px"></div>
   </div>
@@ -439,7 +453,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     </div>
     <!-- pilih rak: langsung tampilkan semua SKU di satu rak (enak buat cetak per rak) -->
     <div class="row" id="bRakRow" style="margin-bottom:7px">
-      <select id="bRak" onchange="setRakFilter(this.value)"></select>
+      <button class="pilih" id="bRak" onclick="bulkPilihRak()"></button>
     </div>
     <div id="bFindInfo"></div>
     <div id="bList"></div>
@@ -703,7 +717,8 @@ var state = {
   bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:'',
   bin:[], binInfo:null, binFilter:'', binBrand:'', binKat:'', binRecom:'', binUrut:'', binEdit:null, logFilter:'', logPenuh:false,
   stiker:[], stikerInfo:null, stikerBrand:'', selStiker:{},
-  antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}, rakFilter:''
+  antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}, rakFilter:'',
+  pcData:[], pcPilih:null, pcNilai:''
 };
 
 /* ================= UTIL ================= */
@@ -747,6 +762,51 @@ function postExec(payload, tries, timeoutMs){
     });
   };
   return attempt(1);
+}
+
+/* =============== PEMILIH BER-PENCARIAN ===============
+   Dipakai semua filter yang daftarnya panjang (brand, kategori, rak…):
+   ketuk tombolnya → muncul kotak cari + daftar, jadi tak perlu scroll jauh. */
+function bukaPilih(judul, daftar, terpilih, cb){
+  state.pcData = daftar || [];
+  state.pcPilih = cb;
+  state.pcNilai = terpilih || '';
+  $('detBox').innerHTML = '<div class="grab"></div><h3>'+esc(judul)+'</h3>'+
+    '<input type="search" id="pcQ" placeholder="🔎 Ketik untuk menyaring…" autocomplete="off">'+
+    '<div id="pcList"></div>'+
+    '<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+  showEl('backDet');
+  $('pcQ').addEventListener('input', renderPilih);
+  renderPilih();
+  setTimeout(function(){ var el=$('pcQ'); if(el) el.focus(); }, 90);
+}
+function renderPilih(){
+  var box = $('pcList'); if(!box) return;
+  var q = norm(($('pcQ')&&$('pcQ').value)||''), toks = q? q.split(' ').filter(Boolean) : [];
+  var list = (state.pcData||[]).filter(function(o){
+    if(!toks.length) return true;
+    var t = norm(o.t+' '+o.v);
+    for(var i=0;i<toks.length;i++) if(t.indexOf(toks[i])<0) return false;
+    return true;
+  });
+  box.innerHTML = list.slice(0,200).map(function(o,i){
+    var idx = (state.pcData||[]).indexOf(o);
+    return '<div class="pcrow'+(state.pcNilai===o.v?' on':'')+'" onclick="pilihDari('+idx+')">'+
+      '<div class="g"><div class="n">'+(toks.length? hl(o.t,toks) : esc(o.t))+'</div>'+
+      (o.m? '<div class="m">'+esc(o.m)+'</div>' : '')+'</div>'+
+      (o.n!=null? '<span class="bstat b-seb">'+o.n+'</span>' : '')+'</div>';
+  }).join('') || '<div class="muted" style="padding:10px 4px">Tidak ada yang cocok.</div>';
+}
+function pilihDari(i){
+  var o = (state.pcData||[])[i]; if(!o) return;
+  hide('backDet');
+  if(state.pcPilih) state.pcPilih(o.v);
+}
+/* tombol filter: tampilkan pilihan yang sedang aktif */
+function tombolPilih(id, label, aktif){
+  var b = $(id); if(!b) return;
+  b.innerHTML = '<span class="pt">'+esc(label)+'</span><span class="pc">▾</span>';
+  b.classList.toggle('on', !!aktif);
 }
 
 /* =============== ANTREAN SIMPAN (latar belakang) ===============
@@ -1245,6 +1305,13 @@ function setStiker(rows, info){
   });
 }
 function setStikerBrand(v){ state.stikerBrand=v||''; renderStiker(); }
+function stikerPilihBrand(){
+  var hit={};
+  state.stiker.forEach(function(x){ if(x.brand) hit[x.brand.toUpperCase()]=(hit[x.brand.toUpperCase()]||0)+1; });
+  var d=[{v:'', t:'🏷️ Semua brand', n:state.stiker.length}];
+  Object.keys(hit).sort().forEach(function(b){ d.push({v:b, t:b, n:hit[b]}); });
+  bukaPilih('🏷️ Pilih brand', d, state.stikerBrand||'', function(v){ setStikerBrand(v); });
+}
 function hapusCariStiker(){ $('tQ').value=''; state.stikerBrand=''; renderStiker(); $('tQ').focus(); }
 function stikerTampil(){
   var q = norm($('tQ').value||''), toks = q? q.split(' ').filter(Boolean) : [];
@@ -1291,14 +1358,7 @@ function renderStiker(){
   }).join('') || '<div class="muted">Tidak ada item yang cocok.</div>';
   $('tCount').textContent = list.length? '· '+list.length+' item'+(list.length>300? ' (300 teratas)':'') : '';
 
-  var hit={};
-  state.stiker.forEach(function(x){ if(x.brand) hit[x.brand.toUpperCase()]=(hit[x.brand.toUpperCase()]||0)+1; });
-  var sel=$('tBrand'), opsi='<option value="">🏷️ Semua brand ('+state.stiker.length+' item)</option>';
-  Object.keys(hit).sort().forEach(function(b){
-    opsi += '<option value="'+esc(b)+'"'+(state.stikerBrand===b?' selected':'')+'>'+esc(b)+' — '+hit[b]+'</option>';
-  });
-  if(sel.innerHTML!==opsi) sel.innerHTML = opsi;
-  sel.value = state.stikerBrand||'';
+  tombolPilih('tBrand', state.stikerBrand? state.stikerBrand : '🏷️ Semua brand', !!state.stikerBrand);
 
   var inf = state.stikerInfo||{};
   $('tStat').innerHTML = '<div><b>'+list.length+'</b><s>item tampil</s></div>'+
@@ -1631,55 +1691,62 @@ function renderBin(){
     ' <button class="lnk" onclick="segarkanBin()">↻ segarkan</button>'+
     (list.length>300? '<br><b>300 baris pertama</b> yang ditampilkan — persempit pencarian.' : '');
 }
-function isiPilihanKategori(dipilih){
-  var sel = $('nKat'); if(!sel) return;
+/* --- daftar pilihan (dipakai tombol ber-pencarian) --- */
+function daftarKategoriBin(){
   var hit = {};
-  state.bin.forEach(function(x){
-    var k = (x.kategori||'(tanpa kategori)').toUpperCase();
-    hit[k] = (hit[k]||0)+1;
-  });
-  var opsi = '<option value="">📂 Semua kategori ('+state.bin.length+' SKU)</option>';
-  Object.keys(hit).sort().forEach(function(k){
-    opsi += '<option value="'+esc(k)+'"'+(dipilih===k?' selected':'')+'>'+esc(k)+' — '+hit[k]+' SKU</option>';
-  });
-  if(sel.innerHTML !== opsi) sel.innerHTML = opsi;
-  sel.value = dipilih||'';
+  state.bin.forEach(function(x){ var k=(x.kategori||'(tanpa kategori)').toUpperCase(); hit[k]=(hit[k]||0)+1; });
+  var out = [{v:'', t:'📂 Semua kategori', n:state.bin.length}];
+  Object.keys(hit).sort().forEach(function(k){ out.push({v:k, t:k, n:hit[k]}); });
+  return out;
 }
 /* daftar brand ikut menyempit kalau kategorinya sudah dipilih */
-function isiPilihanBrand(dipilih, kat){
-  var sel = $('nBrand'); if(!sel) return;
+function daftarBrandBin(kat){
   var hit = {}, total = 0;
   state.bin.forEach(function(x){
     if(kat && (x.kategori||'').toUpperCase()!==kat) return;
     total++;
     if(x.brand) hit[x.brand.toUpperCase()] = (hit[x.brand.toUpperCase()]||0)+1;
   });
-  if(dipilih && !hit[dipilih]) hit[dipilih] = 0;      // brand terpilih tetap tampil walau 0
-  var opsi = '<option value="">🏷️ Semua brand ('+total+' SKU)</option>';
-  Object.keys(hit).sort().forEach(function(b){
-    opsi += '<option value="'+esc(b)+'"'+(dipilih===b?' selected':'')+'>'+esc(b)+' — '+hit[b]+' SKU</option>';
-  });
-  if(sel.innerHTML !== opsi) sel.innerHTML = opsi;
-  sel.value = dipilih||'';
+  var out = [{v:'', t:'🏷️ Semua brand', n:total}];
+  Object.keys(hit).sort().forEach(function(b){ out.push({v:b, t:b, n:hit[b]}); });
+  return out;
 }
-/* pilihan "bin recom" diambil dari nilai yang benar-benar ada (1 · 0,5 · 0,25 · dst) */
-function isiPilihanRecom(dipilih){
-  var sel = $('nRecom'); if(!sel) return;
+function isiPilihanKategori(dipilih){
+  var d = daftarKategoriBin();
+  var ada = d.filter(function(o){ return o.v===dipilih; })[0];
+  tombolPilih('nKat', dipilih? (ada? ada.t : dipilih) : '📂 Semua kategori', !!dipilih);
+}
+function isiPilihanBrand(dipilih, kat){
+  var d = daftarBrandBin(kat);
+  var ada = d.filter(function(o){ return o.v===dipilih; })[0];
+  tombolPilih('nBrand', dipilih? (ada? ada.t : dipilih) : '🏷️ Semua brand', !!dipilih);
+}
+function binPilihKategori(){
+  bukaPilih('📂 Pilih kategori barang', daftarKategoriBin(), state.binKat||'', function(v){ setBinKat(v); });
+}
+function binPilihBrand(){
+  bukaPilih('🏷️ Pilih brand', daftarBrandBin(state.binKat||''), state.binBrand||'', function(v){ setBinBrand(v); });
+}
+function binPilihRecom(){
   var hit = {}, kosong = 0;
   state.bin.forEach(function(x){
     var n = angkaRecom(x.recom);
     if(n===null){ kosong++; return; }
     hit[n] = (hit[n]||0)+1;
   });
-  var nilai = Object.keys(hit).map(Number).sort(function(a,b){ return b-a; });
-  var opsi = '<option value="">📦 Semua bin recom</option>';
-  nilai.forEach(function(n){
-    opsi += '<option value="'+n+'"'+(dipilih!=='' && parseFloat(dipilih)===n?' selected':'')+'>'+
-            tulisRecom(n)+' bin — '+hit[n]+' SKU</option>';
+  var d = [{v:'', t:'📦 Semua bin recom', n:state.bin.length}];
+  Object.keys(hit).map(Number).sort(function(a,b){ return b-a; }).forEach(function(n){
+    d.push({v:String(n), t:tulisRecom(n)+' bin', n:hit[n]});
   });
-  if(kosong) opsi += '<option value="(kosong)"'+(dipilih==='(kosong)'?' selected':'')+'>belum ditentukan — '+kosong+' SKU</option>';
-  if(sel.innerHTML !== opsi) sel.innerHTML = opsi;
-  sel.value = dipilih||'';
+  if(kosong) d.push({v:'(kosong)', t:'belum ditentukan', n:kosong});
+  bukaPilih('📦 Pilih jumlah bin recom', d, state.binRecom||'', function(v){ setBinRecom(v); });
+}
+/* pilihan "bin recom" diambil dari nilai yang benar-benar ada (1 · 0,5 · 0,25 · dst) */
+function isiPilihanRecom(dipilih){
+  var label = !dipilih ? '📦 Semua bin recom'
+            : (dipilih==='(kosong)' ? 'Bin recom: belum ditentukan'
+                                    : 'Bin recom '+tulisRecom(parseFloat(dipilih)));
+  tombolPilih('nRecom', label, !!dipilih);
 }
 function segarkanBin(){
   $('nInfo').textContent = 'Menyegarkan dari Google Sheet…';
@@ -2083,8 +2150,7 @@ function renderBulk(){
 }
 
 /* daftar rak diambil dari data yang sudah didata, diurutkan alami (1A, 1B, … 10A) */
-function isiPilihanRak(dipilih){
-  var sel = $('bRak'); if(!sel) return;
+function daftarRakBulk(){
   var hitung = {}, kosong = 0;
   state.bn.forEach(function(x){
     var r = String(x.rak||'').trim().toUpperCase();
@@ -2096,13 +2162,18 @@ function isiPilihanRak(dipilih){
     if(pa&&pb && +pa[1]!==+pb[1]) return +pa[1]-+pb[1];
     return a<b? -1 : (a>b? 1 : 0);
   });
-  var opsi = '<option value="">🗄️ Semua rak ('+state.bn.length+' baris)</option>';
-  raks.forEach(function(r){
-    opsi += '<option value="'+esc(r)+'"'+(dipilih===r?' selected':'')+'>RAK '+esc(r)+' — '+hitung[r]+' SKU</option>';
-  });
-  if(kosong) opsi += '<option value="(kosong)"'+(dipilih==='(kosong)'?' selected':'')+'>Belum dirak — '+kosong+' SKU</option>';
-  if(sel.innerHTML !== opsi) sel.innerHTML = opsi;
-  sel.value = dipilih || '';
+  var out = [{v:'', t:'🗄️ Semua rak', n:state.bn.length}];
+  raks.forEach(function(r){ out.push({v:r, t:'RAK '+r, n:hitung[r]}); });
+  if(kosong) out.push({v:'(kosong)', t:'Belum dirak', n:kosong});
+  return out;
+}
+function isiPilihanRak(dipilih){
+  var label = !dipilih ? '🗄️ Semua rak'
+            : (dipilih==='(kosong)' ? 'Belum dirak' : 'RAK '+dipilih);
+  tombolPilih('bRak', label, !!dipilih);
+}
+function bulkPilihRak(){
+  bukaPilih('🗄️ Pilih rak', daftarRakBulk(), state.rakFilter||'', function(v){ setRakFilter(v); });
 }
 function setRakFilter(v){ state.rakFilter = v||''; renderBulk(); }
 
