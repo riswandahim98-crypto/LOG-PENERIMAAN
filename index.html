@@ -701,7 +701,7 @@ var state = {
   modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null,
   rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item',
   bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:'',
-  bin:[], binInfo:null, binFilter:'', binBrand:'', binRecom:'', binEdit:null, logFilter:'', logPenuh:false,
+  bin:[], binInfo:null, binFilter:'', binBrand:'', binRecom:'', binUrut:'', binEdit:null, logFilter:'', logPenuh:false,
   stiker:[], stikerInfo:null, stikerBrand:'', selStiker:{},
   antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}, rakFilter:''
 };
@@ -1421,8 +1421,14 @@ function loadBin(){
       : '<span class="err">Gagal memuat: '+esc(e.message)+'</span>';
   });
 }
+function angkaID(n){                                  // 1200 → "1.200" · 0,7 tetap "0,7"
+  var x = Math.round(num(n)*10)/10;
+  var bulat = Math.floor(Math.abs(x)), sisa = Math.round((Math.abs(x)-bulat)*10);
+  var s = String(bulat).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (x<0?'-':'')+s+(sisa? ','+sisa : '');
+}
 function setBin(rows, info, config){
-  // [nama,kategori,brand,qty,focus,penyimpanan,statusNonBin,recomBin,maxQty, rak,level,bin,alamat,petugas,waktu, row]
+  // [nama,kategori,brand,qty,focus,penyimpanan,statusNonBin,recomBin,maxQty, rak,level,bin,alamat,petugas,waktu, row, avgHari, avgBulan]
   state.binInfo = info||{};
   if(config) state.rackCfg = config;                 // dipakai pemilih rak/level/bin
   state.bin = rows.map(function(r,i){
@@ -1431,7 +1437,7 @@ function setBin(rows, info, config){
              recom:String(r[7]==null?'':r[7]), maxqty:String(r[8]==null?'':r[8]),
              rak:String(r[9]||'').toUpperCase(), level:String(r[10]||''), bin:String(r[11]||''),
              alamat:String(r[12]||''), petugas:String(r[13]||''), waktu:String(r[14]||''),
-             row:num(r[15]), i:i};
+             row:num(r[15]), avgHari:num(r[16]), avgBulan:num(r[17]), i:i};
     o._h = norm(o.nama+' '+o.brand+' '+o.kategori+' '+o.status+' '+o.simpan+' '+o.alamat+' '+o.petugas);
     return o;
   });
@@ -1440,7 +1446,7 @@ function binSudah(o){ return !!(o.alamat || (o.rak && o.level && o.bin)); }
 function binRows(){                                   // untuk disimpan ke localStorage
   return state.bin.map(function(o){
     return [o.nama,o.kategori,o.brand,o.qty,o.focus,o.simpan,o.status,o.recom,o.maxqty,
-            o.rak,o.level,o.bin,o.alamat,o.petugas,o.waktu,o.row];
+            o.rak,o.level,o.bin,o.alamat,o.petugas,o.waktu,o.row,o.avgHari,o.avgBulan];
   });
 }
 function binCacheSimpan(){
@@ -1480,6 +1486,8 @@ function renderBinEdit(){
     '<h3>'+esc(o.nama)+'</h3>'+
     '<div class="muted">'+esc(o.brand)+' • '+esc(o.kategori)+' • stok '+o.qty+
       (o.recom!==''? ' • recom '+esc(o.recom)+' bin':'')+
+      '<br><b>Keluar rata-rata '+angkaID(o.avgHari)+'/hari · '+angkaID(o.avgBulan)+'/bulan</b>'+
+      ' — makin sering keluar, taruh di level yang gampang dijangkau'+
       (sudah? '<br>Terakhir diisi '+esc(o.petugas||'-')+(o.waktu? ' • '+esc(o.waktu):'') : '')+'</div>'+
     (sudah && !e.revisi
       ? '<div style="margin:10px 0"><span class="bstat b-ada" style="font-size:14px;padding:6px 12px">'+esc(o.alamat)+'</span></div>'+
@@ -1531,6 +1539,7 @@ function kosongkanBinLokasi(){
 function setBinFilter(f){ state.binFilter = f; renderBin(); }
 function setBinBrand(v){ state.binBrand = v||''; renderBin(); }
 function setBinRecom(v){ state.binRecom = v||''; renderBin(); }
+function setBinUrut(){ state.binUrut = (state.binUrut==='laku')? '' : 'laku'; renderBin(); }
 /* "Jumlah Bin Recom" bisa berupa pecahan (1 · 0,5 · 0,25) dan kadang ditulis
    pakai koma — disamakan dulu supaya bisa dibandingkan & dikelompokkan */
 function angkaRecom(v){
@@ -1541,7 +1550,7 @@ function angkaRecom(v){
 }
 function tulisRecom(n){ return String(n).replace('.', ','); }
 function hapusCariBin(){
-  $('nQ').value=''; state.binFilter=''; state.binBrand=''; state.binRecom='';
+  $('nQ').value=''; state.binFilter=''; state.binBrand=''; state.binRecom=''; state.binUrut='';
   renderBin(); $('nQ').focus();
 }
 function renderBin(){
@@ -1567,6 +1576,8 @@ function renderBin(){
     if(toks.length){ for(var i=0;i<toks.length;i++) if(x._h.indexOf(toks[i])<0) return false; }
     return true;
   });
+  // urutan: bawaan sheet, atau paling sering keluar dulu (buat menentukan level)
+  if(state.binUrut==='laku') list = list.slice().sort(function(a,b){ return num(b.avgHari)-num(a.avgHari); });
   var tulis = function(s){ return toks.length? hl(s,toks) : esc(s); };
   var warna = function(s){ return s.indexOf('FAST')>=0? 'b-ada' : (s.indexOf('DEAD')>=0? 'b-hab' : 'b-seb'); };
   $('nList').innerHTML = list.slice(0,300).map(function(x){
@@ -1575,6 +1586,7 @@ function renderBin(){
         ? '<span class="bstat b-ada">'+tulis(x.alamat)+'</span>'
         : '<span class="bstat b-hab">belum dirak</span>')+'</div>'+
       '<div class="kmeta">'+tulis(x.brand)+' • '+tulis(x.kategori)+' • stok <b>'+x.qty+'</b>'+
+        ' • keluar <b>'+angkaID(x.avgHari)+'</b>/hari · <b>'+angkaID(x.avgBulan)+'</b>/bln'+
         (x.petugas? ' • 👤 '+tulis(x.petugas) : '')+'</div>'+
       '<div style="margin-top:4px">'+
         (x.status? '<span class="bstat '+warna(x.status)+'">'+esc(x.status.toLowerCase())+'</span>' : '')+
@@ -1592,7 +1604,9 @@ function renderBin(){
               ['fast','Fast'],['slow','Slow'],['dead','Dead']];
   $('nFilter').innerHTML = chip.map(function(c){
     return '<span class="pill'+(f===c[0]?' on':'')+'" onclick="setBinFilter(\''+c[0]+'\')">'+c[1]+'</span>';
-  }).join('');
+  }).join('')+
+    '<span class="pill'+(state.binUrut==='laku'?' on':'')+'" onclick="setBinUrut()" '+
+    'title="Urutkan dari yang paling sering keluar">🔥 Paling laku dulu</span>';
   isiPilihanBrand(br);
   isiPilihanRecom(rc);
 
@@ -1601,10 +1615,12 @@ function renderBin(){
   var totBin = list.reduce(function(a,b){ return a + (angkaRecom(b.recom)||0); },0);
   totBin = tulisRecom(Math.round(totBin*100)/100);
   var sudah = list.filter(binSudah).length;
+  var totHari = list.reduce(function(a,b){ return a+num(b.avgHari); },0);
   $('nStat').innerHTML = '<div><b>'+list.length+'</b><s>SKU</s></div>'+
     '<div><b>'+sudah+'</b><s>sudah dirak</s></div>'+
     '<div><b>'+(list.length-sudah)+'</b><s>belum</s></div>'+
-    '<div><b>'+totQty+'</b><s>total stok</s></div>'+
+    '<div><b>'+angkaID(totQty)+'</b><s>total stok</s></div>'+
+    '<div><b>'+angkaID(totHari)+'</b><s>keluar/hari</s></div>'+
     '<div><b>'+totBin+'</b><s>bin recom</s></div>';
   var inf = state.binInfo||{};
   $('nInfo').innerHTML = state.bin.length+' item · sumber: '+esc(inf.file||'BIN INSTALATION')+' › '+esc(inf.sheet||'LIQUID DATABASE')+
