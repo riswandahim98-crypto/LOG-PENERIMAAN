@@ -1497,16 +1497,19 @@ function setBin(rows, info, config){
              recom:String(r[7]==null?'':r[7]), maxqty:String(r[8]==null?'':r[8]),
              rak:String(r[9]||'').toUpperCase(), level:String(r[10]||''), bin:String(r[11]||''),
              alamat:String(r[12]||''), petugas:String(r[13]||''), waktu:String(r[14]||''),
-             row:num(r[15]), avgHari:num(r[16]), avgBulan:num(r[17]), i:i};
+             row:num(r[15]), avgHari:num(r[16]), avgBulan:num(r[17]),
+             relayout:String(r[18]||'').toUpperCase(), i:i};
     o._h = norm(o.nama+' '+o.brand+' '+o.kategori+' '+o.status+' '+o.simpan+' '+o.alamat+' '+o.petugas);
     return o;
   });
 }
 function binSudah(o){ return !!(o.alamat || (o.rak && o.level && o.bin)); }
+/* sudah relayout = sudah punya alamat bin, ATAU sudah ditandai manual (mis. barang yang tak perlu bin) */
+function binRelayout(o){ return o.relayout==='SUDAH' || (o.relayout!=='BELUM' && binSudah(o)); }
 function binRows(){                                   // untuk disimpan ke localStorage
   return state.bin.map(function(o){
     return [o.nama,o.kategori,o.brand,o.qty,o.focus,o.simpan,o.status,o.recom,o.maxqty,
-            o.rak,o.level,o.bin,o.alamat,o.petugas,o.waktu,o.row,o.avgHari,o.avgBulan];
+            o.rak,o.level,o.bin,o.alamat,o.petugas,o.waktu,o.row,o.avgHari,o.avgBulan,o.relayout];
   });
 }
 function binCacheSimpan(){
@@ -1562,15 +1565,21 @@ function renderBinEdit(){
           (lengkap? '💾 Simpan lokasi' : 'Pilih rak · level · bin dulu')+'</button>'+
         '<div style="height:8px"></div>'+
         (sudah? '<button class="btn dgr" onclick="kosongkanBinLokasi()">🧹 Kosongkan lokasi</button><div style="height:8px"></div>' : '')+
+        (!sudah && o.relayout!=='SUDAH'
+          ? '<button class="btn sec" onclick="tandaiRelayout(\'SUDAH\')">✅ Tandai sudah relayout (tanpa bin)</button><div style="height:8px"></div>'
+          : '')+
+        (o.relayout==='SUDAH' && !sudah
+          ? '<button class="btn sec" onclick="tandaiRelayout(\'BELUM\')">↩️ Batalkan tanda sudah relayout</button><div style="height:8px"></div>'
+          : '')+
         '<button class="btn sec" onclick="hide(\'backBin\')">Batal</button>');
 }
 function simpanBinLokasi(){
   var e = state.binEdit; if(!e) return;
   var o = state.bin[e.i];
   if(!(e.rack && e.level && e.bin)){ toast('Rak, level, dan bin harus lengkap'); return; }
-  var lama = {rak:o.rak, level:o.level, bin:o.bin, alamat:o.alamat, petugas:o.petugas, waktu:o.waktu};
+  var lama = {rak:o.rak, level:o.level, bin:o.bin, alamat:o.alamat, petugas:o.petugas, waktu:o.waktu, relayout:o.relayout};
   o.rak=e.rack; o.level=e.level; o.bin=e.bin; o.alamat=e.rack+'-'+e.level+'-'+e.bin;
-  o.petugas=state.user; o.waktu='';
+  o.petugas=state.user; o.waktu=''; o.relayout='SUDAH';
   o._h = norm(o.nama+' '+o.brand+' '+o.kategori+' '+o.status+' '+o.simpan+' '+o.alamat+' '+o.petugas);
   hide('backBin'); renderBin(); binCacheSimpan();
   toast(o.nama.slice(0,28)+' → '+o.alamat);
@@ -1582,12 +1591,29 @@ function simpanBinLokasi(){
       alert('Gagal menyimpan lokasi: '+err.message);
     }}, {tag:o.nama.slice(0,20)});
 }
+/* tandai sudah/belum relayout tanpa mengisi bin — mis. barang yang memang tak perlu bin */
+function tandaiRelayout(nilai){
+  var e = state.binEdit; if(!e) return;
+  var o = state.bin[e.i];
+  var lama = {relayout:o.relayout, petugas:o.petugas, waktu:o.waktu};
+  o.relayout = nilai;
+  if(nilai==='SUDAH'){ o.petugas = state.user; } else { o.petugas=''; o.waktu=''; }
+  hide('backBin'); renderBin(); binCacheSimpan();
+  toast(o.nama.slice(0,26)+' → '+(nilai==='SUDAH'? 'ditandai sudah relayout' : 'tanda relayout dibatalkan'));
+  antre({action:'binupdate', nama:o.nama, row:o.row, relayout:nilai, pic:state.user,
+    __lanjut:function(r){ if(r.row) o.row=r.row; if(r.waktu) o.waktu=r.waktu; binCacheSimpan(); },
+    __gagal:function(err){
+      for(var k in lama) o[k]=lama[k];
+      renderBin(); binCacheSimpan();
+      alert('Gagal menandai: '+err.message);
+    }}, {tag:o.nama.slice(0,20)});
+}
 function kosongkanBinLokasi(){
   var e = state.binEdit; if(!e) return;
   var o = state.bin[e.i];
   if(!confirm('Kosongkan posisi "'+o.nama+'"?')) return;
-  var lama = {rak:o.rak, level:o.level, bin:o.bin, alamat:o.alamat, petugas:o.petugas, waktu:o.waktu};
-  o.rak=''; o.level=''; o.bin=''; o.alamat=''; o.petugas=''; o.waktu='';
+  var lama = {rak:o.rak, level:o.level, bin:o.bin, alamat:o.alamat, petugas:o.petugas, waktu:o.waktu, relayout:o.relayout};
+  o.rak=''; o.level=''; o.bin=''; o.alamat=''; o.petugas=''; o.waktu=''; o.relayout='BELUM';
   hide('backBin'); renderBin(); binCacheSimpan();
   antre({action:'binupdate', nama:o.nama, row:o.row, clear:1, pic:state.user,
     __gagal:function(err){
@@ -1627,8 +1653,9 @@ function renderBin(){
       if(rc==='(kosong)'){ if(n!==null) return false; }
       else if(n===null || n!==parseFloat(rc)) return false;
     }
-    if(f==='belum' && binSudah(x)) return false;
-    if(f==='sudah' && !binSudah(x)) return false;
+    if(f==='belum' && binRelayout(x)) return false;
+    if(f==='sudah' && !binRelayout(x)) return false;
+    if(f==='tandai' && !(x.relayout==='SUDAH' && !binSudah(x))) return false;   // ditandai tapi tanpa bin
     if(f==='bin' && x.simpan.indexOf('NON')>=0) return false;      // hanya yang masuk BIN
     if(f==='nonbin' && x.simpan.indexOf('NON')<0) return false;
     if(f==='fokus' && x.focus!=='Y') return false;
@@ -1646,7 +1673,8 @@ function renderBin(){
     return '<div class="kcard"><div class="b" onclick="openBinEdit('+x.i+')">'+
       '<div class="kno">'+tulis(x.nama)+' '+(binSudah(x)
         ? '<span class="bstat b-ada">'+tulis(x.alamat)+'</span>'
-        : '<span class="bstat b-hab">belum dirak</span>')+'</div>'+
+        : (binRelayout(x)? '<span class="bstat b-seb">sudah relayout · tanpa bin</span>'
+                         : '<span class="bstat b-hab">belum relayout</span>'))+'</div>'+
       '<div class="kmeta">'+tulis(x.brand)+' • '+tulis(x.kategori)+' • stok <b>'+x.qty+'</b>'+
         ' • keluar <b>'+angkaID(x.avgHari)+'</b>/hari · <b>'+angkaID(x.avgBulan)+'</b>/bln'+
         (x.petugas? ' • 👤 '+tulis(x.petugas) : '')+'</div>'+
@@ -1661,7 +1689,8 @@ function renderBin(){
     '</div>';
   }).join('') || '<div class="muted">Tidak ada yang cocok. Coba kata lain atau bersihkan filter.</div>';
 
-  var chip = [['','Semua'],['belum','Belum dirak'],['sudah','Sudah dirak'],
+  var chip = [['','Semua'],['belum','⏳ Belum relayout'],['sudah','✅ Sudah relayout'],
+              ['tandai','Tanpa bin'],
               ['bin','Masuk BIN'],['nonbin','Non BIN'],['fokus','Principal fokus'],
               ['fast','Fast'],['slow','Slow'],['dead','Dead']];
   $('nFilter').innerHTML = chip.map(function(c){
@@ -1677,11 +1706,11 @@ function renderBin(){
   // recom bisa pecahan & pakai koma → dijumlah lewat angkaRecom, dibulatkan 2 desimal
   var totBin = list.reduce(function(a,b){ return a + (angkaRecom(b.recom)||0); },0);
   totBin = tulisRecom(Math.round(totBin*100)/100);
-  var sudah = list.filter(binSudah).length;
+  var sudah = list.filter(binRelayout).length;
   var totHari = list.reduce(function(a,b){ return a+num(b.avgHari); },0);
   $('nStat').innerHTML = '<div><b>'+list.length+'</b><s>SKU</s></div>'+
-    '<div><b>'+sudah+'</b><s>sudah dirak</s></div>'+
-    '<div><b>'+(list.length-sudah)+'</b><s>belum</s></div>'+
+    '<div><b>'+sudah+'</b><s>sudah relayout</s></div>'+
+    '<div><b>'+(list.length-sudah)+'</b><s>belum relayout</s></div>'+
     '<div><b>'+angkaID(totQty)+'</b><s>total stok</s></div>'+
     '<div><b>'+angkaID(totHari)+'</b><s>keluar/hari</s></div>'+
     '<div><b>'+totBin+'</b><s>bin recom</s></div>';
