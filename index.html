@@ -76,6 +76,12 @@ textarea{min-height:56px;resize:vertical}
 .menucard .mt{font-weight:700;font-size:15px;margin-bottom:2px}
 
 .bstat{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px}
+/* baris angka ringkasan (dipakai layar Master Rack & BIN Installation) */
+.stat{display:flex;gap:7px;margin-bottom:9px}
+.stat>div{flex:1;min-width:0;background:var(--card2);border-radius:10px;padding:7px 6px;text-align:center}
+.stat b{display:block;font-size:17px;line-height:1.15}
+.stat s{display:block;text-decoration:none;font-size:10.5px;color:var(--tx2);margin-top:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .b-ada{background:#dcfce7;color:#166534}
 .b-seb{background:#fef3c7;color:#92400e}
 .b-hab{background:#e5e7eb;color:#4b5563}
@@ -306,7 +312,34 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <div class="muted">Pendataan posisi barang di rak: rak · level · bin, stiker, cetak QR</div></div>
     <span class="muted">›</span>
   </div>
+  <div class="menucard" onclick="pilihModul('bin')">
+    <div class="mi">🧱</div>
+    <div class="mg"><div class="mt">BIN Installation</div>
+      <div class="muted">Database acuan relokasi bin — hanya dilihat, tidak diubah</div></div>
+    <span class="muted">›</span>
+  </div>
   <div class="card" id="menuStat"></div>
+</div>
+
+<!-- ============ BIN INSTALLATION (hanya baca) ============ -->
+<div class="wrap hide" id="scBin">
+  <div class="card">
+    <div class="row">
+      <input type="search" id="nQ" placeholder="🔎 Cari nama / brand / kategori…" autocomplete="off">
+      <button class="btn sec sm" onclick="hapusCariBin()" title="Bersihkan">✕</button>
+    </div>
+    <div id="nFilter" style="margin-top:7px"></div>
+    <div class="row" style="margin-top:7px">
+      <select id="nBrand" onchange="setBinBrand(this.value)"></select>
+    </div>
+    <div class="muted" id="nInfo" style="margin-top:5px"></div>
+  </div>
+  <div class="card">
+    <div class="stat" id="nStat" style="margin-bottom:0"></div>
+  </div>
+  <div class="card">
+    <div id="nList"></div>
+  </div>
 </div>
 
 <!-- ============ MASTER RACK ============ -->
@@ -383,7 +416,14 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   </div>
   <div class="card hide" id="ambilBox"></div>
   <div class="card">
-    <h2>🧾 Pengambilan terakhir</h2>
+    <h2>🧾 Log book transaksi <span class="muted" id="lgCount"></span><span class="sp2"></span>
+      <button class="lnk" onclick="muatLogPenuh()" id="lgMore">Muat lebih banyak</button></h2>
+    <!-- cari di dalam catatan transaksi: barang, rak, tujuan, PIC, tanggal, no ambil -->
+    <div class="row" style="margin-bottom:7px">
+      <input type="search" id="lgQ" placeholder="🔎 Cari barang / rak / PIC / tanggal / A-0007…" autocomplete="off">
+      <button class="btn sec sm" id="lgX" onclick="hapusCariLog()" title="Bersihkan pencarian">✕</button>
+    </div>
+    <div id="lgFilter" style="margin-bottom:7px"></div>
     <div id="ambilLog"></div>
   </div>
 </div>
@@ -587,7 +627,7 @@ var DEFAULT_PICS = [
 ];
 var KIRIMAN_WAJIB = true;  // tiap koli harus menempel ke satu kiriman (vendor + no surat jalan)
 var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1',
-          kiriman:'tk_kiriman', pending:'tk_pending', rack:'tk_rack_v1', antre:'tk_antre_v1'};
+          kiriman:'tk_kiriman', pending:'tk_pending', rack:'tk_rack_v1', antre:'tk_antre_v1', bin:'tk_bin_v1'};
 /* Jeda pengumpul: operasi yang terjadi dalam rentang ini digabung jadi SATU kiriman.
    Satu panggilan ke Apps Script memakan ±3 detik apa pun isinya, jadi menggabung
    8 simpanan = 3 detik, bukan 24 detik. Nilainya kecil supaya tetap terasa langsung. */
@@ -601,6 +641,7 @@ var state = {
   modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null,
   rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item',
   bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:'',
+  bin:[], binInfo:null, binFilter:'', binBrand:'', logFilter:'', logPenuh:false,
   antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}, rakFilter:''
 };
 
@@ -890,7 +931,7 @@ function enterApp(){
 function show(which){
   state.screen = which;
   var map = {menu:'scMenu', sesi:'scSesi', koli:'scKoli', buat:'scBuat', riwayat:'scRiwayat',
-             bulk:'scBulk', ds:'scDS', ambil:'scAmbil', rack:'scRack'};
+             bulk:'scBulk', ds:'scDS', ambil:'scAmbil', rack:'scRack', bin:'scBin'};
   for(var k in map) $(map[k]).classList.toggle('hide', k!==which);
   var bulkMode = (state.modul==='bulk');
   $('actSesi').classList.toggle('hide', which!=='sesi');
@@ -914,7 +955,8 @@ function show(which){
     : which==='bulk' ? '🏬 Gudang Bulk'
     : which==='ds' ? ('🧩 '+(state.dsNo||'Dead stock'))
     : which==='ambil' ? '📤 Transaksi Bulk'
-    : which==='rack' ? '🗺️ Master Rack' : '🖨️ Label';
+    : which==='rack' ? '🗺️ Master Rack'
+    : which==='bin' ? '🧱 BIN Installation' : '🖨️ Label';
   if(which==='menu'){ renderMenu(); }
   if(which==='sesi'){ renderSesi(); }
   if(which==='koli'){ renderKoliList(); }
@@ -922,6 +964,7 @@ function show(which){
   if(which==='ds'){ renderDS(); setTimeout(function(){ $('dQ').focus(); }, 60); }
   if(which==='ambil'){ renderAmbilLog(); setTimeout(function(){ $('aQ').focus(); }, 60); }
   if(which==='rack'){ if(!state.rack.length) loadRack(); else renderRack(); setTimeout(function(){ $('rQ').focus(); }, 60); }
+  if(which==='bin'){ if(!state.bin.length) loadBin(); else renderBin(); setTimeout(function(){ $('nQ').focus(); }, 60); }
   if(which==='riwayat'){ if(!state.koli.length) loadKoli(true); else renderKoli(); }
   if(which==='buat') setTimeout(function(){ $('q').focus(); }, 60);
 }
@@ -944,6 +987,7 @@ function pilihModul(m){
   if(m==='penerimaan') show('sesi');
   else if(m==='bulk') show('bulk');
   else if(m==='rack') show('rack');
+  else if(m==='bin') show('bin');
   else show('ambil');
 }
 
@@ -1103,6 +1147,114 @@ function renderKoliList(){
 }
 
 /* ================= MODUL 4: MASTER RACK ================= */
+/* ================= MODUL 5: BIN INSTALLATION (hanya baca) =================
+   Database acuan tim saat relokasi bin. Datanya dari file terpisah
+   ("BIN INSTALATION 2" → tab LIQUID DATABASE) dan TIDAK PERNAH diubah dari app. */
+function loadBin(){
+  var c=null;
+  try{ c = JSON.parse(localStorage.getItem(LS.bin)||'null'); }catch(e){}
+  if(c && c.rows && c.rows.length){ setBin(c.rows, c.info); $('nInfo').textContent = state.bin.length+' item (tersimpan) — menyegarkan…'; }
+  else $('nInfo').textContent = 'Memuat database BIN…';
+  return postExec({action:'bin'}, 2, 90000).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+    var rows = (o.bin&&o.bin.rows)||[];
+    if(!rows.length){ $('nInfo').textContent = state.bin.length? state.bin.length+' item (tersimpan)' : 'Database BIN masih kosong'; return; }
+    var info = {sheet:o.bin.sheet, file:o.bin.file, url:o.bin.url, waktu:o.bin.waktu};
+    setBin(rows, info);
+    try{ localStorage.setItem(LS.bin, JSON.stringify({t:Date.now(), rows:rows, info:info})); }catch(e){}
+    renderBin();
+  }).catch(function(e){
+    $('nInfo').innerHTML = state.bin.length
+      ? state.bin.length+' item (tersimpan di HP)'
+      : '<span class="err">Gagal memuat: '+esc(e.message)+'</span>';
+  });
+}
+function setBin(rows, info){
+  // [nama, kategori, brand, qty, focus, penyimpanan, statusNonBin, recomBin, maxQty]
+  state.binInfo = info||{};
+  state.bin = rows.map(function(r,i){
+    var o = {nama:r[0]||'', kategori:r[1]||'', brand:r[2]||'', qty:num(r[3]), focus:String(r[4]||'').toUpperCase(),
+             simpan:String(r[5]||'').toUpperCase(), status:String(r[6]||'').toUpperCase(),
+             recom:String(r[7]==null?'':r[7]), maxqty:String(r[8]==null?'':r[8]), i:i};
+    o._h = norm(o.nama+' '+o.brand+' '+o.kategori+' '+o.status+' '+o.simpan);
+    return o;
+  });
+}
+function setBinFilter(f){ state.binFilter = f; renderBin(); }
+function setBinBrand(v){ state.binBrand = v||''; renderBin(); }
+function hapusCariBin(){
+  $('nQ').value=''; state.binFilter=''; state.binBrand='';
+  renderBin(); $('nQ').focus();
+}
+function renderBin(){
+  if(!$('nList')) return;
+  var q = norm($('nQ').value||''), toks = q? q.split(' ').filter(Boolean) : [];
+  var f = state.binFilter||'', br = state.binBrand||'';
+  var list = state.bin.filter(function(x){
+    if(br && x.brand.toUpperCase()!==br) return false;
+    if(f==='bin' && x.simpan.indexOf('NON')>=0) return false;      // hanya yang masuk BIN
+    if(f==='nonbin' && x.simpan.indexOf('NON')<0) return false;
+    if(f==='fokus' && x.focus!=='Y') return false;
+    if(f==='fast' && x.status.indexOf('FAST')<0) return false;
+    if(f==='slow' && x.status.indexOf('SLOW')<0) return false;
+    if(f==='dead' && x.status.indexOf('DEAD')<0) return false;
+    if(toks.length){ for(var i=0;i<toks.length;i++) if(x._h.indexOf(toks[i])<0) return false; }
+    return true;
+  });
+  var tulis = function(s){ return toks.length? hl(s,toks) : esc(s); };
+  var warna = function(s){ return s.indexOf('FAST')>=0? 'b-ada' : (s.indexOf('DEAD')>=0? 'b-hab' : 'b-seb'); };
+  $('nList').innerHTML = list.slice(0,300).map(function(x){
+    return '<div class="kcard"><div class="b">'+
+      '<div class="kno">'+tulis(x.nama)+'</div>'+
+      '<div class="kmeta">'+tulis(x.brand)+' • '+tulis(x.kategori)+' • stok <b>'+x.qty+'</b></div>'+
+      '<div style="margin-top:4px">'+
+        (x.status? '<span class="bstat '+warna(x.status)+'">'+esc(x.status.toLowerCase())+'</span>' : '')+
+        '<span class="bstat b-seb">'+esc(x.simpan||'-')+'</span>'+
+        (x.focus==='Y'? '<span class="bstat b-ada">principal fokus</span>' : '')+
+        (x.recom!==''? '<span class="bstat b-seb">recom '+esc(x.recom)+' bin</span>' : '')+
+        (x.maxqty!==''? '<span class="bstat b-seb">maks '+esc(x.maxqty)+'/bin</span>' : '')+
+      '</div></div></div>';
+  }).join('') || '<div class="muted">Tidak ada yang cocok. Coba kata lain atau bersihkan filter.</div>';
+
+  var chip = [['','Semua'],['bin','Masuk BIN'],['nonbin','Non BIN'],['fokus','Principal fokus'],
+              ['fast','Fast'],['slow','Slow'],['dead','Dead']];
+  $('nFilter').innerHTML = chip.map(function(c){
+    return '<span class="pill'+(f===c[0]?' on':'')+'" onclick="setBinFilter(\''+c[0]+'\')">'+c[1]+'</span>';
+  }).join('');
+  isiPilihanBrand(br);
+
+  var totQty = list.reduce(function(a,b){ return a+num(b.qty); },0);
+  var totBin = list.reduce(function(a,b){ return a+num(b.recom); },0);
+  $('nStat').innerHTML = '<div><b>'+list.length+'</b><s>SKU</s></div>'+
+    '<div><b>'+totQty+'</b><s>total stok</s></div>'+
+    '<div><b>'+totBin+'</b><s>bin disarankan</s></div>';
+  var inf = state.binInfo||{};
+  $('nInfo').innerHTML = state.bin.length+' item · sumber: '+esc(inf.file||'BIN INSTALATION')+' › '+esc(inf.sheet||'LIQUID DATABASE')+
+    (inf.url? ' · <a href="'+esc(inf.url)+'" target="_blank">buka sheet</a>' : '')+
+    ' <button class="lnk" onclick="segarkanBin()">↻ segarkan</button>'+
+    (list.length>300? '<br><b>300 baris pertama</b> yang ditampilkan — persempit pencarian.' : '');
+}
+function isiPilihanBrand(dipilih){
+  var sel = $('nBrand'); if(!sel) return;
+  var hit = {};
+  state.bin.forEach(function(x){ if(x.brand) hit[x.brand.toUpperCase()] = (hit[x.brand.toUpperCase()]||0)+1; });
+  var nama = Object.keys(hit).sort();
+  var opsi = '<option value="">🏷️ Semua brand ('+state.bin.length+' SKU)</option>';
+  nama.forEach(function(b){ opsi += '<option value="'+esc(b)+'"'+(dipilih===b?' selected':'')+'>'+esc(b)+' — '+hit[b]+' SKU</option>'; });
+  if(sel.innerHTML !== opsi) sel.innerHTML = opsi;
+  sel.value = dipilih||'';
+}
+function segarkanBin(){
+  $('nInfo').textContent = 'Menyegarkan dari Google Sheet…';
+  postExec({action:'bin', fresh:1}, 2, 90000).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+    var rows=(o.bin&&o.bin.rows)||[];
+    setBin(rows, {sheet:o.bin.sheet, file:o.bin.file, url:o.bin.url, waktu:o.bin.waktu});
+    try{ localStorage.setItem(LS.bin, JSON.stringify({t:Date.now(), rows:rows, info:state.binInfo})); }catch(e){}
+    renderBin(); toast(rows.length+' item disegarkan');
+  }).catch(function(e){ $('nInfo').innerHTML = '<span class="err">Gagal menyegarkan: '+esc(e.message)+'</span>'; });
+}
+
 function loadRack(){
   var c=null;
   try{ c = JSON.parse(localStorage.getItem(LS.rack)||'null'); }catch(e){}
@@ -2274,12 +2426,60 @@ function kirimAmbil(otomatis){
   antre(payload, {tag:noKoli});
 }
 
+/* Log book: bisa dicari (barang, rak, tujuan, PIC, tanggal, no ambil) + saring jenis transaksi */
+function setLogFilter(f){ state.logFilter = f; renderAmbilLog(); }
+function hapusCariLog(){
+  if($('lgQ')) $('lgQ').value='';
+  state.logFilter='';
+  renderAmbilLog();
+  if($('lgQ')) $('lgQ').focus();
+}
+function muatLogPenuh(){
+  $('lgCount').textContent = '· memuat semua…';
+  postExec({action:'logambil', all:1}, 2, 90000).then(function(o){
+    if(o.ambil){ state.ambil = o.ambil.slice().reverse(); state.logPenuh = true; }
+    renderAmbilLog(); toast(state.ambil.length+' baris transaksi dimuat');
+  }).catch(function(e){ toast('Gagal memuat: '+e.message, 3500); renderAmbilLog(); });
+}
 function renderAmbilLog(){
-  var h = state.ambil.slice(0,25).map(function(a){
-    return '<div class="arow"><div class="g"><div class="n">'+esc(a.nama||a.kode)+' <span class="muted">×'+a.qty+'</span></div>'+
-      '<div class="s">'+esc(a.koli)+' → '+esc(a.tujuan||'-')+' • '+esc(a.pic||'-')+(a.waktu? ' • '+esc(a.waktu):'')+'</div></div></div>';
+  if(!$('ambilLog')) return;
+  var q = norm(($('lgQ') && $('lgQ').value) || ''), toks = q? q.split(' ').filter(Boolean) : [];
+  var f = state.logFilter||'';
+  var list = (state.ambil||[]).filter(function(a){
+    var sumber = String(a.koli||'');
+    if(f==='ambil' && String(a.no||'')==='PINDAH') return false;
+    if(f==='pindah' && String(a.no||'')!=='PINDAH') return false;
+    if(f==='ds' && sumber.indexOf('DS-')<0) return false;
+    if(f==='hariini' && a.tanggal!==todayStr()) return false;
+    if(toks.length){
+      var teks = norm([a.no, a.kode, a.nama, sumber, a.tujuan, a.pic, a.tanggal, dmy(a.tanggal), a.waktu].join(' '));
+      for(var i=0;i<toks.length;i++) if(teks.indexOf(toks[i])<0) return false;
+    }
+    return true;
+  });
+  var tulis = function(s){ return toks.length? hl(String(s||''), toks) : esc(s); };
+  var tampil = list.slice(0, 60);
+  $('ambilLog').innerHTML = tampil.map(function(a){
+    var pindah = String(a.no||'')==='PINDAH';
+    return '<div class="arow"><div class="g">'+
+      '<div class="n">'+tulis(a.nama||a.kode)+' <span class="muted">×'+a.qty+'</span>'+
+        (pindah? '<span class="bstat b-seb">pindah rak</span>' : '')+'</div>'+
+      '<div class="s">'+tulis(a.koli)+' → '+tulis(a.tujuan||'-')+' • '+tulis(a.pic||'-')+
+        (a.waktu? ' • '+tulis(a.waktu) : (a.tanggal? ' • '+dmy(a.tanggal):''))+
+        (a.no && a.no!=='…' && !pindah? ' • '+tulis(a.no) : '')+'</div></div></div>';
+  }).join('') || '<div class="muted">'+
+    (toks.length||f ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi tercatat.')+'</div>';
+
+  var chip = [['','Semua'],['hariini','Hari ini'],['ambil','Pengambilan'],['pindah','Pindah rak'],['ds','Dead stock']];
+  $('lgFilter').innerHTML = chip.map(function(c){
+    return '<span class="pill'+(f===c[0]?' on':'')+'" onclick="setLogFilter(\''+c[0]+'\')">'+c[1]+'</span>';
   }).join('');
-  $('ambilLog').innerHTML = h || '<div class="muted">Belum ada pengambilan tercatat.</div>';
+  var adaCari = !!(toks.length || f);
+  if($('lgX')) $('lgX').style.display = adaCari? '' : 'none';
+  $('lgCount').textContent = adaCari
+    ? ('· '+list.length+' dari '+state.ambil.length)
+    : (state.ambil.length? '· '+state.ambil.length+' baris'+(list.length>60? ' (60 teratas)':'') : '');
+  if($('lgMore')) $('lgMore').style.display = state.logPenuh? 'none' : '';
 }
 
 function openScanKoli(){ openScan(true); }
@@ -2438,6 +2638,12 @@ function bindSearch(){
     var hit = state.byKode[normCode($('dQ').value.trim())] || state.byBar[normCode($('dQ').value.trim())];
     if(hit) tanyaQtyDS(hit);
   });
+  var tl=null;
+  $('lgQ').addEventListener('input', function(){ clearTimeout(tl); tl=setTimeout(renderAmbilLog,110); });
+  $('lgQ').addEventListener('keydown', function(e){ if(e.key==='Escape') hapusCariLog(); });
+  var tn=null;
+  $('nQ').addEventListener('input', function(){ clearTimeout(tn); tn=setTimeout(renderBin,110); });
+  $('nQ').addEventListener('keydown', function(e){ if(e.key==='Escape') hapusCariBin(); });
   var tr=null;
   $('rQ').addEventListener('input', function(){ clearTimeout(tr); tr=setTimeout(renderRack,110); });
   $('rQ').addEventListener('keydown', function(e){
