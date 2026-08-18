@@ -342,6 +342,10 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   </div>
 </div>
 
+<div class="back hide" id="backBin" onclick="if(event.target===this) hide('backBin')">
+  <div class="sheet" id="binBox"></div>
+</div>
+
 <!-- ============ MASTER RACK ============ -->
 <div class="wrap hide" id="scRack">
   <div class="card">
@@ -641,7 +645,7 @@ var state = {
   modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null,
   rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item',
   bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:'',
-  bin:[], binInfo:null, binFilter:'', binBrand:'', logFilter:'', logPenuh:false,
+  bin:[], binInfo:null, binFilter:'', binBrand:'', binEdit:null, logFilter:'', logPenuh:false,
   antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}, rakFilter:''
 };
 
@@ -1153,15 +1157,15 @@ function renderKoliList(){
 function loadBin(){
   var c=null;
   try{ c = JSON.parse(localStorage.getItem(LS.bin)||'null'); }catch(e){}
-  if(c && c.rows && c.rows.length){ setBin(c.rows, c.info); $('nInfo').textContent = state.bin.length+' item (tersimpan) — menyegarkan…'; }
+  if(c && c.rows && c.rows.length){ setBin(c.rows, c.info, c.config); $('nInfo').textContent = state.bin.length+' item (tersimpan) — menyegarkan…'; }
   else $('nInfo').textContent = 'Memuat database BIN…';
   return postExec({action:'bin'}, 2, 90000).then(function(o){
     if(!o.ok) throw new Error(o.error||'gagal');
     var rows = (o.bin&&o.bin.rows)||[];
     if(!rows.length){ $('nInfo').textContent = state.bin.length? state.bin.length+' item (tersimpan)' : 'Database BIN masih kosong'; return; }
     var info = {sheet:o.bin.sheet, file:o.bin.file, url:o.bin.url, waktu:o.bin.waktu};
-    setBin(rows, info);
-    try{ localStorage.setItem(LS.bin, JSON.stringify({t:Date.now(), rows:rows, info:info})); }catch(e){}
+    setBin(rows, info, o.config);
+    binCacheSimpan();
     renderBin();
   }).catch(function(e){
     $('nInfo').innerHTML = state.bin.length
@@ -1169,16 +1173,112 @@ function loadBin(){
       : '<span class="err">Gagal memuat: '+esc(e.message)+'</span>';
   });
 }
-function setBin(rows, info){
-  // [nama, kategori, brand, qty, focus, penyimpanan, statusNonBin, recomBin, maxQty]
+function setBin(rows, info, config){
+  // [nama,kategori,brand,qty,focus,penyimpanan,statusNonBin,recomBin,maxQty, rak,level,bin,alamat,petugas,waktu, row]
   state.binInfo = info||{};
+  if(config) state.rackCfg = config;                 // dipakai pemilih rak/level/bin
   state.bin = rows.map(function(r,i){
     var o = {nama:r[0]||'', kategori:r[1]||'', brand:r[2]||'', qty:num(r[3]), focus:String(r[4]||'').toUpperCase(),
              simpan:String(r[5]||'').toUpperCase(), status:String(r[6]||'').toUpperCase(),
-             recom:String(r[7]==null?'':r[7]), maxqty:String(r[8]==null?'':r[8]), i:i};
-    o._h = norm(o.nama+' '+o.brand+' '+o.kategori+' '+o.status+' '+o.simpan);
+             recom:String(r[7]==null?'':r[7]), maxqty:String(r[8]==null?'':r[8]),
+             rak:String(r[9]||'').toUpperCase(), level:String(r[10]||''), bin:String(r[11]||''),
+             alamat:String(r[12]||''), petugas:String(r[13]||''), waktu:String(r[14]||''),
+             row:num(r[15]), i:i};
+    o._h = norm(o.nama+' '+o.brand+' '+o.kategori+' '+o.status+' '+o.simpan+' '+o.alamat+' '+o.petugas);
     return o;
   });
+}
+function binSudah(o){ return !!(o.alamat || (o.rak && o.level && o.bin)); }
+function binRows(){                                   // untuk disimpan ke localStorage
+  return state.bin.map(function(o){
+    return [o.nama,o.kategori,o.brand,o.qty,o.focus,o.simpan,o.status,o.recom,o.maxqty,
+            o.rak,o.level,o.bin,o.alamat,o.petugas,o.waktu,o.row];
+  });
+}
+function binCacheSimpan(){
+  try{ localStorage.setItem(LS.bin, JSON.stringify({t:Date.now(), rows:binRows(), info:state.binInfo, config:state.rackCfg})); }catch(e){}
+}
+
+/* ---------- isi lokasi rak langsung dari menu BIN (hasilnya ke file BIN) ---------- */
+function openBinEdit(i){
+  var o = state.bin[i]; if(!o) return;
+  state.binEdit = {i:i, rack:o.rak||'', level:String(o.level||''), bin:String(o.bin||''), revisi:false};
+  renderBinEdit();
+  showEl('backBin');
+}
+function binPick(k,v){
+  var e = state.binEdit; if(!e) return;
+  e[k] = (e[k]===v) ? '' : v;
+  if(k==='level') e.bin='';
+  renderBinEdit();                 // tidak auto-simpan: tunggu tombol 💾 Simpan lokasi
+}
+function binRevisi(){ state.binEdit.revisi = true; renderBinEdit(); }
+function renderBinEdit(){
+  var e = state.binEdit; if(!e) return;
+  var o = state.bin[e.i];
+  var cfg = state.rackCfg||{racks:[],levels:6,bins:7};
+  var grup = {};
+  (cfg.racks||[]).forEach(function(r){ var n=r.replace(/[A-Z]/g,''); (grup[n]=grup[n]||[]).push(r); });
+  var rakHTML = Object.keys(grup).sort(function(a,b){return a-b;}).map(function(n){
+    return '<div class="rgrp">'+grup[n].map(function(r){
+      return '<span class="pill'+(e.rack===r?' on':'')+'" onclick="binPick(\'rack\',\''+r+'\')">'+r+'</span>';
+    }).join('')+'</div>';
+  }).join('');
+  var lvl=''; for(var l=1;l<=(cfg.levels||6);l++) lvl += '<span class="pill'+(e.level===String(l)?' on':'')+'" onclick="binPick(\'level\',\''+l+'\')">'+l+'</span>';
+  var bins=''; for(var b=1;b<=(cfg.bins||7);b++) bins += '<span class="pill'+(e.bin===String(b)?' on':'')+'" onclick="binPick(\'bin\',\''+b+'\')">'+b+'</span>';
+  var lengkap = e.rack && e.level && e.bin;
+  var sudah = binSudah(o);
+  $('binBox').innerHTML = '<div class="grab"></div>'+
+    '<h3>'+esc(o.nama)+'</h3>'+
+    '<div class="muted">'+esc(o.brand)+' • '+esc(o.kategori)+' • stok '+o.qty+
+      (o.recom!==''? ' • recom '+esc(o.recom)+' bin':'')+
+      (sudah? '<br>Terakhir diisi '+esc(o.petugas||'-')+(o.waktu? ' • '+esc(o.waktu):'') : '')+'</div>'+
+    (sudah && !e.revisi
+      ? '<div style="margin:10px 0"><span class="bstat b-ada" style="font-size:14px;padding:6px 12px">'+esc(o.alamat)+'</span></div>'+
+        '<button class="btn" onclick="binRevisi()">✏️ Ubah posisi</button>'+
+        '<div style="height:8px"></div><button class="btn dgr" onclick="kosongkanBinLokasi()">🧹 Kosongkan lokasi</button>'+
+        '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backBin\')">Tutup</button>'
+      : '<label class="lb">Rak</label><div class="pickwrap">'+rakHTML+'</div>'+
+        '<label class="lb">Level</label><div>'+lvl+'</div>'+
+        '<label class="lb">Bin</label><div class="pickwrap short">'+bins+'</div>'+
+        '<div class="prev">Alamat: <b>'+esc(lengkap? (e.rack+'-'+e.level+'-'+e.bin) : '—')+'</b></div>'+
+        '<button class="btn" onclick="simpanBinLokasi()"'+(lengkap? '' : ' disabled style="opacity:.5"')+'>'+
+          (lengkap? '💾 Simpan lokasi' : 'Pilih rak · level · bin dulu')+'</button>'+
+        '<div style="height:8px"></div>'+
+        (sudah? '<button class="btn dgr" onclick="kosongkanBinLokasi()">🧹 Kosongkan lokasi</button><div style="height:8px"></div>' : '')+
+        '<button class="btn sec" onclick="hide(\'backBin\')">Batal</button>');
+}
+function simpanBinLokasi(){
+  var e = state.binEdit; if(!e) return;
+  var o = state.bin[e.i];
+  if(!(e.rack && e.level && e.bin)){ toast('Rak, level, dan bin harus lengkap'); return; }
+  var lama = {rak:o.rak, level:o.level, bin:o.bin, alamat:o.alamat, petugas:o.petugas, waktu:o.waktu};
+  o.rak=e.rack; o.level=e.level; o.bin=e.bin; o.alamat=e.rack+'-'+e.level+'-'+e.bin;
+  o.petugas=state.user; o.waktu='';
+  o._h = norm(o.nama+' '+o.brand+' '+o.kategori+' '+o.status+' '+o.simpan+' '+o.alamat+' '+o.petugas);
+  hide('backBin'); renderBin(); binCacheSimpan();
+  toast(o.nama.slice(0,28)+' → '+o.alamat);
+  antre({action:'binupdate', nama:o.nama, row:o.row, rak:e.rack, level:e.level, bin:e.bin, pic:state.user,
+    __lanjut:function(r){ if(r.row) o.row=r.row; if(r.waktu) o.waktu=r.waktu; binCacheSimpan(); },
+    __gagal:function(err){
+      for(var k in lama) o[k]=lama[k];
+      renderBin(); binCacheSimpan();
+      alert('Gagal menyimpan lokasi: '+err.message);
+    }}, {tag:o.nama.slice(0,20)});
+}
+function kosongkanBinLokasi(){
+  var e = state.binEdit; if(!e) return;
+  var o = state.bin[e.i];
+  if(!confirm('Kosongkan posisi "'+o.nama+'"?')) return;
+  var lama = {rak:o.rak, level:o.level, bin:o.bin, alamat:o.alamat, petugas:o.petugas, waktu:o.waktu};
+  o.rak=''; o.level=''; o.bin=''; o.alamat=''; o.petugas=''; o.waktu='';
+  hide('backBin'); renderBin(); binCacheSimpan();
+  antre({action:'binupdate', nama:o.nama, row:o.row, clear:1, pic:state.user,
+    __gagal:function(err){
+      for(var k in lama) o[k]=lama[k];
+      renderBin(); binCacheSimpan();
+      alert('Gagal mengosongkan: '+err.message);
+    }}, {tag:o.nama.slice(0,20)});
 }
 function setBinFilter(f){ state.binFilter = f; renderBin(); }
 function setBinBrand(v){ state.binBrand = v||''; renderBin(); }
@@ -1192,6 +1292,8 @@ function renderBin(){
   var f = state.binFilter||'', br = state.binBrand||'';
   var list = state.bin.filter(function(x){
     if(br && x.brand.toUpperCase()!==br) return false;
+    if(f==='belum' && binSudah(x)) return false;
+    if(f==='sudah' && !binSudah(x)) return false;
     if(f==='bin' && x.simpan.indexOf('NON')>=0) return false;      // hanya yang masuk BIN
     if(f==='nonbin' && x.simpan.indexOf('NON')<0) return false;
     if(f==='fokus' && x.focus!=='Y') return false;
@@ -1204,19 +1306,25 @@ function renderBin(){
   var tulis = function(s){ return toks.length? hl(s,toks) : esc(s); };
   var warna = function(s){ return s.indexOf('FAST')>=0? 'b-ada' : (s.indexOf('DEAD')>=0? 'b-hab' : 'b-seb'); };
   $('nList').innerHTML = list.slice(0,300).map(function(x){
-    return '<div class="kcard"><div class="b">'+
-      '<div class="kno">'+tulis(x.nama)+'</div>'+
-      '<div class="kmeta">'+tulis(x.brand)+' • '+tulis(x.kategori)+' • stok <b>'+x.qty+'</b></div>'+
+    return '<div class="kcard"><div class="b" onclick="openBinEdit('+x.i+')">'+
+      '<div class="kno">'+tulis(x.nama)+' '+(binSudah(x)
+        ? '<span class="bstat b-ada">'+tulis(x.alamat)+'</span>'
+        : '<span class="bstat b-hab">belum dirak</span>')+'</div>'+
+      '<div class="kmeta">'+tulis(x.brand)+' • '+tulis(x.kategori)+' • stok <b>'+x.qty+'</b>'+
+        (x.petugas? ' • 👤 '+tulis(x.petugas) : '')+'</div>'+
       '<div style="margin-top:4px">'+
         (x.status? '<span class="bstat '+warna(x.status)+'">'+esc(x.status.toLowerCase())+'</span>' : '')+
         '<span class="bstat b-seb">'+esc(x.simpan||'-')+'</span>'+
         (x.focus==='Y'? '<span class="bstat b-ada">principal fokus</span>' : '')+
         (x.recom!==''? '<span class="bstat b-seb">recom '+esc(x.recom)+' bin</span>' : '')+
         (x.maxqty!==''? '<span class="bstat b-seb">maks '+esc(x.maxqty)+'/bin</span>' : '')+
-      '</div></div></div>';
+      '</div></div>'+
+      '<button class="qbtn" onclick="event.stopPropagation();openBinEdit('+x.i+')" title="Isi lokasi rak">📍</button>'+
+    '</div>';
   }).join('') || '<div class="muted">Tidak ada yang cocok. Coba kata lain atau bersihkan filter.</div>';
 
-  var chip = [['','Semua'],['bin','Masuk BIN'],['nonbin','Non BIN'],['fokus','Principal fokus'],
+  var chip = [['','Semua'],['belum','Belum dirak'],['sudah','Sudah dirak'],
+              ['bin','Masuk BIN'],['nonbin','Non BIN'],['fokus','Principal fokus'],
               ['fast','Fast'],['slow','Slow'],['dead','Dead']];
   $('nFilter').innerHTML = chip.map(function(c){
     return '<span class="pill'+(f===c[0]?' on':'')+'" onclick="setBinFilter(\''+c[0]+'\')">'+c[1]+'</span>';
@@ -1225,9 +1333,12 @@ function renderBin(){
 
   var totQty = list.reduce(function(a,b){ return a+num(b.qty); },0);
   var totBin = list.reduce(function(a,b){ return a+num(b.recom); },0);
+  var sudah = list.filter(binSudah).length;
   $('nStat').innerHTML = '<div><b>'+list.length+'</b><s>SKU</s></div>'+
+    '<div><b>'+sudah+'</b><s>sudah dirak</s></div>'+
+    '<div><b>'+(list.length-sudah)+'</b><s>belum</s></div>'+
     '<div><b>'+totQty+'</b><s>total stok</s></div>'+
-    '<div><b>'+totBin+'</b><s>bin disarankan</s></div>';
+    '<div><b>'+totBin+'</b><s>bin recom</s></div>';
   var inf = state.binInfo||{};
   $('nInfo').innerHTML = state.bin.length+' item · sumber: '+esc(inf.file||'BIN INSTALATION')+' › '+esc(inf.sheet||'LIQUID DATABASE')+
     (inf.url? ' · <a href="'+esc(inf.url)+'" target="_blank">buka sheet</a>' : '')+
@@ -1249,8 +1360,8 @@ function segarkanBin(){
   postExec({action:'bin', fresh:1}, 2, 90000).then(function(o){
     if(!o.ok) throw new Error(o.error||'gagal');
     var rows=(o.bin&&o.bin.rows)||[];
-    setBin(rows, {sheet:o.bin.sheet, file:o.bin.file, url:o.bin.url, waktu:o.bin.waktu});
-    try{ localStorage.setItem(LS.bin, JSON.stringify({t:Date.now(), rows:rows, info:state.binInfo})); }catch(e){}
+    setBin(rows, {sheet:o.bin.sheet, file:o.bin.file, url:o.bin.url, waktu:o.bin.waktu}, o.config);
+    binCacheSimpan();
     renderBin(); toast(rows.length+' item disegarkan');
   }).catch(function(e){ $('nInfo').innerHTML = '<span class="err">Gagal menyegarkan: '+esc(e.message)+'</span>'; });
 }
