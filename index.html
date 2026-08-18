@@ -230,23 +230,23 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 .blabel.polos .dsno{font-size:38pt;font-weight:bold;letter-spacing:1px;line-height:1}
 .blabel.polos .dsket{font-size:13pt;margin-top:3mm}
 
-/* ===== stiker barcode 60×40 mm — A3 melintang, 6 kolom × 7 baris = 42/lembar =====
-   6×60 = 360 mm (muat di 420 mm) · 7×40 = 280 mm (muat di 297 mm) → paling irit. */
+/* ===== stiker barcode 50×34 mm — A3 melintang, 8 kolom × 8 baris = 64/lembar =====
+   8×50 = 400 mm (area cetak 410 mm) · judul 5 + 8×34 = 277 mm (area cetak 287 mm). */
 /* satu lembar = judul tipis (5,5mm) + grid stiker (280mm) = 285,5mm,
    masih muat di tinggi cetak A3 melintang (287mm) → susunan 6×7 tidak berubah */
-.slembar{width:360mm;margin:0 auto;background:#fff;page-break-after:always;break-after:page}
+.slembar{width:400mm;margin:0 auto;background:#fff;page-break-after:always;break-after:page}
 .slembar:last-child{page-break-after:auto;break-after:auto}
 .sjudul{height:5mm;display:flex;align-items:center;gap:3mm;overflow:hidden;white-space:nowrap;
   font-family:Arial,Helvetica,sans-serif;font-size:7pt;color:#000;line-height:1}
 .sjudul b{font-size:8pt;letter-spacing:.2px}
 .sjudul .jm{margin-left:auto;color:#444}
-.spage{width:360mm;display:flex;flex-wrap:wrap;background:#fff}
-.slabel{width:60mm;height:40mm;padding:2mm;box-sizing:border-box;background:#fff;color:#000;
+.spage{width:400mm;display:flex;flex-wrap:wrap;background:#fff}
+.slabel{width:50mm;height:34mm;padding:1.6mm;box-sizing:border-box;background:#fff;color:#000;
   font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:1.5mm;overflow:hidden;border:.35mm solid #000;
+  justify-content:center;gap:1.2mm;overflow:hidden;border:.35mm solid #000;
   page-break-inside:avoid;break-inside:avoid}
-.slabel .sq{width:19mm;height:19mm;flex:none}
-.slabel .sq svg{width:19mm;height:19mm;display:block}
+.slabel .sq{width:15mm;height:15mm;flex:none}
+.slabel .sq svg{width:15mm;height:15mm;display:block}
 .slabel .sn{font-size:8.5pt;font-weight:bold;line-height:1.12;text-align:center;
   max-height:13mm;overflow:hidden;width:100%}
 .slabel .sn.t2{font-size:7.5pt}
@@ -357,7 +357,7 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   <div class="menucard" onclick="pilihModul('stiker')">
     <div class="mi">🏷️</div>
     <div class="mg"><div class="mt">Print Barcode</div>
-      <div class="muted">Stiker QR 6×4 cm untuk item yang stoknya tidak nol — 42 per lembar A3</div></div>
+      <div class="muted">Stiker QR 5×3,4 cm untuk item yang stoknya tidak nol — 64 per lembar A3</div></div>
     <span class="muted">›</span>
   </div>
   <div class="card" id="menuStat"></div>
@@ -1274,8 +1274,8 @@ function renderKoliList(){
 /* ================= MODUL 4: MASTER RACK ================= */
 /* ================= MODUL 6: PRINT BARCODE (stiker QR 6×4 cm) =================
    Sumbernya tab master ber-gid khusus, hanya item ber-qty ≠ 0.
-   Cetak di A3 melintang: 6 kolom × 7 baris = 42 stiker per lembar (paling irit). */
-var STIKER_KOL = 6, STIKER_BARIS = 7;             // per lembar A3 melintang
+   Cetak di A3 melintang: 8 kolom × 8 baris = 64 stiker per lembar. */
+var STIKER_KOL = 8, STIKER_BARIS = 8;             // per lembar A3 melintang
 var STIKER_PER_LEMBAR = STIKER_KOL * STIKER_BARIS;
 
 function loadStiker(){
