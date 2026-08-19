@@ -2421,6 +2421,9 @@ function tanyaDus(o, rakAwal, tglAwal){
     // "ganti" dulu ambigu karena PIC tak tahu angka yang diketik itu tambahan atau total
     '<button class="btn" id="dusBtnTambah" onclick="simpanDus(\'tambah\')"></button>'+
     '<div style="height:8px"></div><button class="btn sec" id="dusBtnGanti" onclick="simpanDus(\'ganti\')"></button>'+
+    // hapus hanya muncul kalau barisnya memang sudah ada — dan sengaja ditaruh di
+    // dalam dialog, bukan di daftar, supaya tidak kepencet saat menggulir
+    (ada? '<div style="height:8px"></div><button class="btn dgr" onclick="hapusBarisBN()">🗑️ Hapus baris ini</button>' : '')+
     '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backDet\')">Batal</button>';
   showEl('backDet');
   cekRakBaris();
@@ -2533,6 +2536,36 @@ function simpanDus(mode){
            else state.bn = state.bn.filter(function(x){ return x!==ada; });
            renderBulk(); alert('Gagal menyimpan: '+e.message);
          }}, {tag:o.kode});
+}
+
+/* Hapus satu baris bulk (SKU + rak + batch). Baris yang dusnya sudah pernah
+   diambil TIDAK boleh dihapus — riwayat pengambilannya jadi menggantung tanpa
+   induk. Untuk kasus itu jalannya "Koreksi jadi N dus". */
+function hapusBarisBN(){
+  var o = state.pendBulk; if(!o) return;
+  var rak = ($('dusRak')&&$('dusRak').value||'').trim();
+  var tgl = state.bLama? '' : (state.bTgl||'');
+  var x = state.bn.filter(function(y){
+    return y.kode===o.kode && (y.rak||'').toUpperCase()===rak.toUpperCase() && samaTgl(y.tgl,tgl); })[0];
+  if(!x){ toast('Barisnya tidak ketemu'); return; }
+  if(num(x.diambil)>0){
+    alert('Tidak bisa dihapus — sudah ada '+num(x.diambil)+' dus yang diambil dari baris ini.\n\n'+
+          'Kalau mau mengurangi jumlahnya, pakai "Koreksi jadi ... dus".');
+    return;
+  }
+  var ket = (rak? 'rak '+rak : 'belum dirak')+' · '+(x.lama? 'barang lama' : 'masuk '+dmy(x.tgl))+' · '+num(x.dus)+' dus';
+  if(!confirm('Hapus baris ini?\n\n'+(x.nama||x.kode)+'\n'+ket+'\n\nBaris lain SKU ini di rak/batch berbeda tidak ikut terhapus.')) return;
+  hide('backDet');
+  var posisi = state.bn.indexOf(x);
+  state.bn = state.bn.filter(function(y){ return y!==x; });
+  delete state.sel[bnId(x)];
+  renderBulk();
+  toast('Dihapus: '+x.kode+(rak? ' @rak '+rak : ''));
+  antre({action:'bulkhapus', kode:x.kode, rak:rak, tgl:tgl, pic:state.user,
+         __gagal:function(e){
+           state.bn.splice(Math.max(0,posisi), 0, x);      // kembalikan ke tempat semula
+           renderBulk(); alert('Gagal menghapus: '+e.message);
+         }}, {tag:'hapus-'+x.kode});
 }
 
 function editBN(id){
