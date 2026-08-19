@@ -470,8 +470,9 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <button class="btn sec sm" id="bFindX" onclick="hapusCariBulk()" title="Bersihkan pencarian">✕</button>
     </div>
     <!-- pilih rak: langsung tampilkan semua SKU di satu rak (enak buat cetak per rak) -->
-    <div class="row" id="bRakRow" style="margin-bottom:7px">
-      <button class="pilih" id="bRak" onclick="bulkPilihRak()"></button>
+    <div class="row" id="bRakRow" style="margin-bottom:7px;flex-wrap:wrap">
+      <button class="pilih" id="bRak" onclick="bulkPilihRak()" style="flex:1 1 46%"></button>
+      <button class="pilih" id="bBatch" onclick="bulkPilihBatch()" style="flex:1 1 46%"></button>
     </div>
     <div id="bFindInfo"></div>
     <div id="bList"></div>
@@ -764,7 +765,7 @@ var state = {
   bin:[], binInfo:null, binFilter:'', binBrand:'', binKat:'', binRecom:'', binUrut:'', binEdit:null, logFilter:'', logPenuh:false,
   stiker:[], stikerInfo:null, stikerBrand:'', selStiker:{},
   antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}, rakFilter:'',
-  pcData:[], pcPilih:null, pcNilai:'',
+  pcData:[], pcPilih:null, pcNilai:'', batchFilter:'',
   // modul 7 — pendataan ulang
   pu:{rows:[], rak:[]}, rakDaftar:[], puRak:'', puUndo:[], puMuat:false,
   // jawaban terakhir "barang lama / tanggal masuk" — diingat supaya PIC tak mengisi ulang tiap SKU
@@ -2176,9 +2177,11 @@ function renderBulk(){
     return true;
   };
   var rakPilih = state.rakFilter||'';
+  var batchPilih = state.batchFilter||'';
   var h='';
   if(mode==='normal'){
     isiPilihanRak(rakPilih);
+    isiPilihanBatch(batchPilih);
     var list = state.bn.filter(function(x){
       if(f==='ada' && num(x.sisa)<=0) return false;
       if(f==='habis' && num(x.sisa)>0) return false;
@@ -2186,7 +2189,13 @@ function renderBulk(){
         var r = String(x.rak||'').trim().toUpperCase();
         if(rakPilih==='(kosong)' ? r!=='' : r!==rakPilih) return false;
       }
-      if(toks.length && !cocok(x.kode+' '+x.nama+' rak '+(x.rak||''))) return false;
+      // saring per batch → tinggal 🖨️ cetak semua hasil, tak perlu centang satu-satu
+      if(batchPilih){
+        if(batchPilih==='(lama)'){ if(!(x.lama || !x.tgl)) return false; }
+        else if(batchPilih==='(baru)'){ if(x.lama || !x.tgl) return false; }
+        else if(String(x.tgl||'')!==batchPilih) return false;
+      }
+      if(toks.length && !cocok(x.kode+' '+x.nama+' rak '+(x.rak||'')+' '+(x.lama?'barang lama':'masuk '+dmy(x.tgl)))) return false;
       return true;
     });
     h = list.slice(0,300).map(function(x){
@@ -2243,7 +2252,7 @@ function renderBulk(){
     return '<span class="pill'+(f===x[0]?' on':'')+'" onclick="setBFilter(\''+x[0]+'\')">'+x[1]+'</span>';
   }).join('');
   var rakRow = $('bRakRow'); if(rakRow) rakRow.style.display = (mode==='normal') ? '' : 'none';
-  infoCariBulk(toks.length || (mode==='normal' && rakPilih), (state.bulkTampil||[]).length, rakPilih);
+  infoCariBulk(toks.length || (mode==='normal' && (rakPilih||batchPilih)), (state.bulkTampil||[]).length, rakPilih, batchPilih);
   updatePrintBulk();
 }
 
@@ -2275,12 +2284,42 @@ function bulkPilihRak(){
 }
 function setRakFilter(v){ state.rakFilter = v||''; renderBulk(); }
 
+/* Saringan batch — dipakai waktu mencetak: label barang lama dan label kiriman
+   baru biasanya dicetak di waktu yang berbeda, jadi jangan sampai tercampur. */
+function daftarBatchBulk(){
+  var lama = 0, hitung = {}, dus = {};
+  state.bn.forEach(function(x){
+    if(x.lama || !x.tgl){ lama++; return; }
+    hitung[x.tgl] = (hitung[x.tgl]||0)+1;
+    dus[x.tgl] = (dus[x.tgl]||0)+num(x.dus);
+  });
+  var tgls = Object.keys(hitung).sort().reverse();      // tanggal terbaru di atas
+  var out = [{v:'', t:'📅 Semua batch', n:state.bn.length}];
+  if(lama) out.push({v:'(lama)', t:'📦 Barang lama', m:'tanpa tanggal — paling tua', n:lama});
+  if(tgls.length) out.push({v:'(baru)', t:'🆕 Semua yang bertanggal', n:state.bn.length-lama});
+  tgls.forEach(function(t){ out.push({v:t, t:'🆕 Masuk '+dmy(t), m:dus[t]+' dus', n:hitung[t]}); });
+  return out;
+}
+function isiPilihanBatch(dipilih){
+  var label = !dipilih ? '📅 Semua batch'
+            : dipilih==='(lama)' ? '📦 Barang lama'
+            : dipilih==='(baru)' ? '🆕 Yang bertanggal'
+            : '🆕 Masuk '+dmy(dipilih);
+  tombolPilih('bBatch', label, !!dipilih);
+}
+function bulkPilihBatch(){
+  bukaPilih('📅 Pilih batch (tanggal masuk)', daftarBatchBulk(), state.batchFilter||'', function(v){ setBatchFilter(v); });
+}
+function setBatchFilter(v){ state.batchFilter = v||''; renderBulk(); }
+
 /* baris kecil di bawah kotak cari: berapa yang ketemu + pintasan pilih semua hasil */
-function infoCariBulk(adaCari, jml, rak){
+function infoCariBulk(adaCari, jml, rak, batch){
   var el = $('bFindInfo'); if(!el) return;
   var x = $('bFindX'); if(x) x.style.display = adaCari ? '' : 'none';
   if(!adaCari){ el.innerHTML = ''; return; }
   var judul = rak ? (rak==='(kosong)' ? 'belum dirak' : 'rak '+esc(rak)) : '';
+  if(batch) judul += (judul? ' · ':'') + (batch==='(lama)' ? 'barang lama'
+            : batch==='(baru)' ? 'yang bertanggal' : 'masuk '+esc(dmy(batch)));
   el.innerHTML = '<div class="muted" style="margin:-2px 0 7px">'+
     (jml? jml+' baris ketemu'+(judul? ' di <b>'+judul+'</b>':'')+
           ' · <button class="lnk" onclick="selAllBulk(true)">Pilih semua hasil</button>'+
@@ -2290,6 +2329,7 @@ function infoCariBulk(adaCari, jml, rak){
 function hapusCariBulk(){
   if($('bFind')) $('bFind').value = '';
   state.rakFilter = '';
+  state.batchFilter = '';
   renderBulk();
   if($('bFind')) $('bFind').focus();
 }
@@ -2348,10 +2388,10 @@ function tanyaDus(o, rakAwal, tglAwal){
     '<div class="muted">'+esc(o.kode)+(o.satuan?' • '+esc(o.satuan):'')+sudah+'</div>'+
     '<label class="lb">Jumlah dus</label>'+
     '<div class="row"><button class="qbtn" onclick="dusStep(-1)">−</button>'+
-      '<input type="number" id="dusIn" inputmode="numeric" value="1" style="text-align:center;font-size:20px;font-weight:800">'+
+      '<input type="number" id="dusIn" inputmode="numeric" value="1" oninput="cekRakBaris()" style="text-align:center;font-size:20px;font-weight:800">'+
       '<button class="qbtn" onclick="dusStep(1)">+</button></div>'+
     '<div style="margin-top:8px">'+[1,2,4,5,10,20].map(function(n){
-      return '<span class="pill" onclick="$(\'dusIn\').value='+n+'">'+n+'</span>'; }).join('')+'</div>'+
+      return '<span class="pill" onclick="setDus('+n+')">'+n+'</span>'; }).join('')+'</div>'+
     '<label class="lb">Isi 1 dus berapa '+(o.satuan||'pcs')+'? (tercetak di label)</label>'+
     '<input type="number" id="dusIsi" inputmode="numeric" placeholder="mis. 50" value="'+(ada&&num(ada.isi)?num(ada.isi):'')+'">'+
     '<label class="lb">Lokasi rak (jadi kunci barisnya · tercetak di label)</label>'+
@@ -2362,14 +2402,17 @@ function tanyaDus(o, rakAwal, tglAwal){
     '<button class="pilih" id="dusBatch" onclick="tanyaBatchDus()" style="width:100%"></button>'+
     '<div class="muted" id="batchInfo" style="margin-top:4px"></div>'+
     '<div style="height:10px"></div>'+
-    '<button class="btn" onclick="simpanDus(\'tambah\')">➕ Simpan / tambah dus</button>'+
-    '<div style="height:8px"></div><button class="btn sec" onclick="simpanDus(\'ganti\')">✏️ Ganti jadi angka ini</button>'+
+    // tulisan tombolnya menyebut ANGKA AKHIRNYA, bukan cara kerjanya — "tambah" vs
+    // "ganti" dulu ambigu karena PIC tak tahu angka yang diketik itu tambahan atau total
+    '<button class="btn" id="dusBtnTambah" onclick="simpanDus(\'tambah\')"></button>'+
+    '<div style="height:8px"></div><button class="btn sec" id="dusBtnGanti" onclick="simpanDus(\'ganti\')"></button>'+
     '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backDet\')">Batal</button>';
   showEl('backDet');
   cekRakBaris();
   setTimeout(function(){ var el=$('dusIn'); if(el) el.select(); }, 80);
 }
-function dusStep(d){ $('dusIn').value = Math.max(1, num($('dusIn').value)+d); }
+function dusStep(d){ $('dusIn').value = Math.max(1, num($('dusIn').value)+d); cekRakBaris(); }
+function setDus(n){ $('dusIn').value = n; cekRakBaris(); }
 
 /* rak tidak diketik lagi — dipilih dari daftar resmi supaya menu lama dan
    menu pendataan ulang memakai kode rak yang sama persis */
@@ -2423,6 +2466,21 @@ function cekRakBaris(){
     ? '↑ menambah baris yang sudah ada di '+(rak? 'rak '+esc(rak) : '“belum dirak”')+' (sekarang '+num(ada.dus)+' dus)'
     : '＋ akan jadi baris baru untuk '+(rak? 'rak '+esc(rak) : '“belum dirak”')+
       (tgl? ' · batch '+esc(dmy(tgl)) : ' · barang lama');
+
+  // tombolnya bicara hasil akhir: "Tambah 2 → jadi 8 dus" / "Koreksi jadi 2 dus".
+  // Baris baru cuma butuh satu tombol — tak ada yang perlu dipilih.
+  var n = num($('dusIn') && $('dusIn').value);
+  var bt = $('dusBtnTambah'), bg = $('dusBtnGanti');
+  if(bt && bg){
+    if(ada){
+      bg.classList.remove('hide');
+      bt.textContent = '➕ Tambah '+n+' → jadi '+(num(ada.dus)+n)+' dus';
+      bg.textContent = '✏️ Koreksi jadi '+n+' dus';
+    } else {
+      bg.classList.add('hide');
+      bt.textContent = '💾 Simpan '+n+' dus';
+    }
+  }
   var bi = $('batchInfo');
   if(bi) bi.innerHTML = state.bLama
     ? 'Tanpa tanggal → dianggap stok paling tua, wajib keluar duluan.'
@@ -2861,12 +2919,19 @@ function cariBarangAmbil(kode){
   var bns = state.bn.filter(function(x){ return normCode(x.kode)===key && num(x.sisa)>0; });
   if(bns.length===1){ ambilDus(bns[0]); return; }
   if(bns.length>1){
-    $('detBox').innerHTML = '<div class="grab"></div><h3>📦 Ada di '+bns.length+' rak</h3>'+
-      '<div class="muted">'+esc(bns[0].nama)+'</div><div style="height:8px"></div>'+
-      bns.map(function(x){
+    // Satu SKU bisa punya beberapa BATCH, bahkan di rak yang sama — jadi rak saja
+    // tidak cukup untuk membedakannya. Diurutkan dari yang paling tua supaya
+    // pilihan pertama memang yang benar menurut FIFO.
+    bns = bns.slice().sort(function(a,b){
+      return urutBatch(a)-urutBatch(b) || String(a.rak||'').localeCompare(String(b.rak||'')); });
+    $('detBox').innerHTML = '<div class="grab"></div><h3>📦 Ada '+bns.length+' pilihan</h3>'+
+      '<div class="muted">'+esc(bns[0].nama)+' — yang paling tua di urutan teratas, ambil itu dulu.</div><div style="height:8px"></div>'+
+      bns.map(function(x, i){
         return '<div class="kirrow" onclick="hide(\'backDet\');ambilDus(bnCari(\''+esc(bnId(x))+'\'))">'+
-          '<div class="g"><div class="n">'+(x.rak? 'RAK '+esc(x.rak) : 'belum dirak')+' <span class="muted">sisa '+num(x.sisa)+' dus</span></div>'+
-          '<div class="m">'+esc(x.kode)+(num(x.isi)? ' • '+num(x.isi)+' '+esc(x.satuan||'pcs')+'/dus':'')+'</div></div></div>';
+          '<div class="g"><div class="n">'+(x.rak? 'RAK '+esc(x.rak) : 'belum dirak')+' <span class="muted">sisa '+num(x.sisa)+' dus</span>'+
+            (i===0? '<span class="bstat b-ada">paling tua</span>' : '')+'</div>'+
+          '<div class="m">'+(x.lama? '📦 barang lama' : '🆕 masuk '+esc(dmy(x.tgl)))+' • '+esc(x.kode)+
+            (num(x.isi)? ' • '+num(x.isi)+' '+esc(x.satuan||'pcs')+'/dus':'')+'</div></div></div>';
       }).join('')+'<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
     showEl('backDet');
     return;
@@ -4460,12 +4525,24 @@ function bandingPU(){
   var beda = daftar.filter(function(x){ return x.d!==0; });
   var tambah = beda.filter(function(x){ return x.d>0; }).reduce(function(a,b){ return a+b.d; },0);
   var kurang = beda.filter(function(x){ return x.d<0; }).reduce(function(a,b){ return a+b.d; },0);
+  // SKU yang ada di sistem tapi TIDAK ikut dihitung akan hilang dari rak ini.
+  // Paling sering penyebabnya: ada kiriman masuk saat pendataan, atau raknya
+  // belum selesai dihitung. Harus terbaca sebelum dikunci, bukan sesudah.
+  var hilang = daftar.filter(function(x){ return x.lama>0 && x.baru===0; });
+  var pesanHilang = hilang.length
+    ? '<div class="card" style="margin:8px 0;border-color:#dc2626;background:#fee2e2;color:#991b1b">'+
+      '<b>⚠️ '+hilang.length+' SKU akan hilang dari '+esc(rak)+'</b><br>'+
+      esc(hilang.slice(0,6).map(function(x){ return (x.nama||x.kode)+' ('+x.lama+' dus)'; }).join(' · '))+
+      (hilang.length>6? ' … dan '+(hilang.length-6)+' lagi' : '')+
+      '<br>Pastikan raknya sudah dihitung habis, dan kiriman yang baru turun sudah ikut didata.</div>'
+    : '';
 
   $('detBox').innerHTML = '<div class="grab"></div><h3>🔍 '+esc(rak)+' — lama vs baru</h3>'+
     '<div class="stat" style="margin:6px 0">'+
       '<div><b>'+daftar.length+'</b><s>SKU dibanding</s></div>'+
       '<div><b>'+beda.length+'</b><s>selisih</s></div>'+
       '<div><b>'+(tambah>0?'+'+tambah:'0')+' / '+kurang+'</b><s>dus lebih / kurang</s></div></div>'+
+    pesanHilang+
     (beda.length
       ? '<div style="max-height:44vh;overflow:auto">'+beda.slice(0,80).map(function(x){
           return '<div class="arow"><div class="g"><div class="n">'+esc(x.nama)+'</div>'+
