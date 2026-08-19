@@ -235,8 +235,20 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 .blabel .bn.s6{font-size:11.5pt}
 .blabel .bk{font-size:10pt;margin-top:1.5mm;word-break:break-all;line-height:1.1}
 .blabel .bx{font-size:12.5pt;font-weight:bold;margin-top:1.5mm}
-.blabel .brak{flex:none;margin-left:3mm;padding:2mm 3mm;border:.5mm solid #000;
-  border-radius:2mm;font-size:14pt;font-weight:bold;white-space:nowrap;text-align:center}
+/* Kolom kanan: TANGGAL MASUK besar di atas, kotak rak di bawahnya.
+   Tanggal dibikin menonjol karena inilah yang dibaca petugas saat memutuskan
+   dus mana yang boleh diambil — raknya cuma penunjuk tempat. */
+.blabel .bkanan{flex:none;margin-left:3mm;display:flex;flex-direction:column;
+  align-items:stretch;gap:2mm;text-align:center;max-width:42mm}
+.blabel .btgl{font-weight:bold;line-height:1;white-space:nowrap}
+.blabel .btgl .tl{display:block;font-size:7.5pt;font-weight:bold;letter-spacing:.4px;margin-bottom:.8mm}
+.blabel .btgl .td{display:block;font-size:23pt;letter-spacing:.5px}
+.blabel .btgl.lama .td{font-size:20pt;letter-spacing:1px}
+/* nama rak boleh panjang (mis. NON RACK B) → dibiarkan turun baris, hurufnya
+   dikecilkan sendiri lewat kelas .kecil supaya kotaknya tidak jebol */
+.blabel .brak{padding:2mm 3mm;border:.5mm solid #000;border-radius:2mm;
+  font-size:14pt;font-weight:bold;text-align:center;line-height:1.12;white-space:normal;word-break:break-word}
+.blabel .brak.kecil{font-size:10.5pt}
 /* label dus dead stock — tanpa barcode, nomornya besar */
 .blabel.polos{align-items:flex-start;flex-direction:column;justify-content:center}
 .blabel.polos .dsno{font-size:38pt;font-weight:bold;letter-spacing:1px;line-height:1}
@@ -522,7 +534,10 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <input type="search" id="aQ" placeholder="Scan barcode / ketik nama barang / DS-0001" autocomplete="off">
       <button class="btn sec sm" onclick="openScanKoli()" title="Scan QR koli / barcode barang">📷</button>
     </div>
-    <div class="muted" style="margin-top:5px">Dus <b>normal</b>: scan barcode barangnya (kalau labelnya rusak, <b>ketik namanya</b> lalu Enter). Dus <b>dead stock</b> (campur): scan QR di label kolinya.</div>
+    <!-- daftar saran langsung muncul saat mengetik: tidak perlu hafal nama persisnya,
+         dan langsung kelihatan batch mana yang boleh diambil -->
+    <div class="res" id="aRes"></div>
+    <div class="muted" style="margin-top:5px">Dus <b>normal</b>: scan barcode barangnya (kalau labelnya rusak, <b>ketik namanya</b> — daftarnya muncul sendiri). Dus <b>dead stock</b> (campur): scan QR di label kolinya.</div>
   </div>
   <div class="card hide" id="ambilBox"></div>
   <div class="card">
@@ -2752,18 +2767,26 @@ function paskanNamaLabel(){
   });
   pr.style.cssText = gaya;
 }
+/* batch = {tgl:'2026-08-19'} atau {lama:true}; boleh juga dikosongkan */
 function labelBarangHTML(kode, nama, isiPcs, satuan, lokasi, perDus, batch){
   var isi = num(isiPcs) > 0 ? (num(isiPcs)+' '+(satuan||'pcs')+(perDus===false?'':' / dus')) : (satuan? esc(satuan) : '');
-  // kotak rak ditaruh di ujung kanan label (di luar blok teks), ukurannya sengaja
-  // lebih kecil daripada nama SKU — nama barang yang harus paling menonjol
+  var b = batch || {};
+  var tglHTML = b.lama
+    ? '<div class="btgl lama"><span class="tl">STOK</span><span class="td">LAMA</span></div>'
+    : (b.tgl ? '<div class="btgl"><span class="tl">MASUK</span><span class="td">'+esc(dmy(b.tgl))+'</span></div>' : '');
+  var rakKelas = String(lokasi||'').length > 9 ? ' kecil' : '';
+  // Kolom kanan = tanggal besar + kotak rak di bawahnya. Nama SKU tetap tulisan
+  // terbesar di label; tanggal nomor dua, karena itu yang menentukan boleh diambil
+  // atau tidak. Rak paling kecil — cuma penunjuk tempat.
+  var kanan = (tglHTML || lokasi)
+    ? '<div class="bkanan">'+tglHTML+(lokasi? '<div class="brak'+rakKelas+'">'+esc(lokasi)+'</div>' : '')+'</div>'
+    : '';
   return '<div class="blabel"><div class="bq">'+qrSvg(kode)+'</div>'+
     '<div class="bt">'+
       '<div class="bn'+ukuranNama(nama)+'">'+esc(nama)+'</div>'+
-      '<div class="bk">'+esc(kode)+(batch? ' · <b>'+esc(batch)+'</b>' : '')+'</div>'+
+      '<div class="bk">'+esc(kode)+'</div>'+
       (isi? '<div class="bx">'+isi+'</div>' : '')+
-    '</div>'+
-    (lokasi? '<div class="brak">'+esc(lokasi)+'</div>' : '')+
-    '</div>';
+    '</div>'+ kanan + '</div>';
 }
 /* Label dus dead stock: tanpa barcode, cukup nomornya besar */
 function labelDusDSHTML(no, ket){
@@ -2810,10 +2833,12 @@ function cetakBulk(list){
     var lab = [];
     list.forEach(function(x){
       var n = Math.max(1, num(x.dus));                 // 1 label per dus, isinya sama semua
-      // tanggal masuk ikut tercetak — inilah yang membuat FIFO terlihat di dusnya,
-      // bukan cuma di layar. Barang lama sengaja ditulis "LAMA" (memang tak bertanggal).
-      var batch = x.lama ? 'LAMA' : (x.tgl? 'MASUK '+dmy(x.tgl) : '');
-      for(var i=1;i<=n;i++) lab.push(labelBarangHTML(x.kode, x.nama, x.isi, x.satuan, x.rak? ('RAK '+x.rak) : '', undefined, batch));
+      // tanggal masuk ikut tercetak besar — inilah yang membuat FIFO terlihat di
+      // dusnya, bukan cuma di layar. Barang lama memang tak bertanggal → "STOK LAMA".
+      var batch = (x.lama || !x.tgl) ? {lama:true} : {tgl:x.tgl};
+      // "NON RACK B" tidak perlu diawali "RAK" lagi — jadi "RAK NON RACK B"
+      var lok = x.rak ? (/^NON/i.test(x.rak) ? x.rak : 'RAK '+x.rak) : '';
+      for(var i=1;i<=n;i++) lab.push(labelBarangHTML(x.kode, x.nama, x.isi, x.satuan, lok, undefined, batch));
     });
     cetak(lembarBulk(lab), 'A4', '8mm');
     toast(lab.length+' label · '+Math.ceil(lab.length/LABEL_PER_LEMBAR)+' lembar A4');
@@ -2924,14 +2949,19 @@ function cariBarangAmbil(kode){
     // pilihan pertama memang yang benar menurut FIFO.
     bns = bns.slice().sort(function(a,b){
       return urutBatch(a)-urutBatch(b) || String(a.rak||'').localeCompare(String(b.rak||'')); });
-    $('detBox').innerHTML = '<div class="grab"></div><h3>📦 Ada '+bns.length+' pilihan</h3>'+
-      '<div class="muted">'+esc(bns[0].nama)+' — yang paling tua di urutan teratas, ambil itu dulu.</div><div style="height:8px"></div>'+
-      bns.map(function(x, i){
-        return '<div class="kirrow" onclick="hide(\'backDet\');ambilDus(bnCari(\''+esc(bnId(x))+'\'))">'+
-          '<div class="g"><div class="n">'+(x.rak? 'RAK '+esc(x.rak) : 'belum dirak')+' <span class="muted">sisa '+num(x.sisa)+' dus</span>'+
-            (i===0? '<span class="bstat b-ada">paling tua</span>' : '')+'</div>'+
+    var tertua = urutBatch(bns[0]);
+    $('detBox').innerHTML = '<div class="grab"></div><h3>📦 Ambil dari sini</h3>'+
+      '<div class="muted">'+esc(bns[0].nama)+' — hanya batch tertua yang bisa dipilih. '+
+      'Yang lain terkunci sampai stok di atasnya habis.</div><div style="height:8px"></div>'+
+      bns.map(function(x){
+        var boleh = urutBatch(x)===tertua;
+        return '<div class="kirrow"'+(boleh? ' onclick="hide(\'backDet\');ambilDus(bnCari(\''+esc(bnId(x))+'\'))"' : ' style="opacity:.45;cursor:not-allowed"')+'>'+
+          '<div class="g"><div class="n">'+(boleh? '' : '🔒 ')+(x.rak? 'RAK '+esc(x.rak) : 'belum dirak')+
+            ' <span class="muted">sisa '+num(x.sisa)+' dus</span>'+
+            (boleh? '<span class="bstat b-ada">ambil ini</span>' : '')+'</div>'+
           '<div class="m">'+(x.lama? '📦 barang lama' : '🆕 masuk '+esc(dmy(x.tgl)))+' • '+esc(x.kode)+
-            (num(x.isi)? ' • '+num(x.isi)+' '+esc(x.satuan||'pcs')+'/dus':'')+'</div></div></div>';
+            (num(x.isi)? ' • '+num(x.isi)+' '+esc(x.satuan||'pcs')+'/dus':'')+
+            (boleh? '' : ' • <b>terkunci — belum gilirannya</b>')+'</div></div></div>';
       }).join('')+'<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
     showEl('backDet');
     return;
@@ -3038,6 +3068,59 @@ function batchTertua(kode){
   return sisa[0];
 }
 
+/* Daftar saran di layar pengambilan — muncul sambil mengetik, jadi PIC tidak perlu
+   hafal nama persisnya. Batch yang belum gilirannya tetap ditampilkan (biar jelas
+   barangnya ada) tapi terkunci, dan yang tertua diberi tanda "ambil ini". */
+function ambilCari(){
+  var box = $('aRes'); if(!box) return;
+  var v = String($('aQ').value||'').trim();
+  if(v.length < 2){ box.innerHTML=''; return; }
+  var toks = norm(v).split(' ').filter(Boolean);
+  var cocok = function(s){
+    var t = norm(s);
+    for(var i=0;i<toks.length;i++) if(t.indexOf(toks[i])<0) return false;
+    return true;
+  };
+  var bns = state.bn.filter(function(x){
+    return num(x.sisa)>0 && cocok(x.kode+' '+x.nama+' '+(x.rak||'')+' '+(x.lama?'barang lama':'masuk '+dmy(x.tgl)));
+  }).sort(function(a,b){
+    return String(a.nama||'').localeCompare(String(b.nama||'')) || urutBatch(a)-urutBatch(b)
+        || String(a.rak||'').localeCompare(String(b.rak||''));
+  });
+  var h = bns.slice(0,12).map(function(x){
+    var tua = batchTertua(x.kode);
+    var boleh = !(tua && urutBatch(tua) < urutBatch(x));
+    var batch = x.lama? '📦 barang lama' : '🆕 masuk '+esc(dmy(x.tgl));
+    return '<div class="it"'+(boleh? ' onclick="pilihSaranAmbil(\''+esc(bnId(x))+'\')"' : ' style="opacity:.45;cursor:not-allowed"')+'>'+
+      '<div class="n">'+(boleh? '' : '🔒 ')+hl(x.nama||x.kode, toks)+
+        (boleh? ' <span class="bstat b-ada">ambil ini</span>' : '')+'</div>'+
+      '<div class="m">'+(x.rak? 'RAK '+esc(x.rak) : 'belum dirak')+' • sisa '+num(x.sisa)+' dus • '+batch+
+        (boleh? '' : ' • <b>belum gilirannya</b>')+'</div></div>';
+  }).join('');
+  // dus campur juga ikut dicari, dipilih lewat nomor DS-nya
+  var ds = [];
+  state.ds.forEach(function(d){
+    (state.dsItem[d.no]||[]).forEach(function(i){
+      if(num(i.sisa)>0 && cocok(i.kode+' '+i.nama) && ds.length<5) ds.push({d:d, i:i});
+    });
+  });
+  h += ds.map(function(c){
+    return '<div class="it" onclick="pilihSaranDS(\''+esc(c.d.no)+'\')">'+
+      '<div class="n">'+hl(c.i.nama||c.i.kode, toks)+'</div>'+
+      '<div class="m">'+esc(c.d.no)+' (dead stock) • sisa '+num(c.i.sisa)+' '+esc(c.i.satuan||'pcs')+'</div></div>';
+  }).join('');
+  box.innerHTML = h || '<div class="muted" style="padding:8px 4px">Tidak ada stok yang cocok dengan “'+esc(v)+'”.</div>';
+}
+function pilihSaranAmbil(id){
+  $('aQ').value=''; $('aRes').innerHTML='';
+  ambilDus(bnCari(id));
+}
+function pilihSaranDS(no){
+  $('aQ').value=''; $('aRes').innerHTML='';
+  var d = state.ds.filter(function(x){ return x.no===no; })[0];
+  if(d) bukaDSAmbil(d);
+}
+
 /* bulk normal: ambil per DUS */
 function ambilDus(bn){
   if(!bn) return;
@@ -3046,23 +3129,37 @@ function ambilDus(bn){
   // paling bawah. Yang penting keputusannya tercatat, bukan dilarang.
   var tua = batchTertua(bn.kode);
   var luar = tua && urutBatch(tua) < urutBatch(bn);
-  var pesanFifo = luar
-    ? '<div class="card" style="margin:8px 0 0;border-color:#d97706;background:#fef3c7;color:#92400e">'+
-      '<b>⚠️ Ambil yang lama dulu</b><br>Masih ada <b>'+num(tua.sisa)+' dus</b> yang lebih tua di '+
-      (tua.rak? '<b>rak '+esc(tua.rak)+'</b>' : '<b>belum dirak</b>')+' — '+
-      (tua.lama? 'barang lama' : 'masuk '+esc(dmy(tua.tgl)))+'.<br>'+
-      'Kalau tetap lanjut, alasannya tercatat di log book.</div>'
-    : '';
+
+  // PALANG KERAS: batch yang lebih tua wajib habis dulu. Tidak ada tombol lanjut —
+  // yang disediakan justru jalan keluarnya: langsung pindah ke batch yang benar.
+  if(luar){
+    $('detBox').innerHTML = '<div class="grab"></div>'+
+      '<h3>🚫 Belum boleh diambil dari sini</h3>'+
+      '<div class="muted">'+esc(bn.nama||bn.kode)+' • '+(bn.rak? 'RAK '+esc(bn.rak) : 'belum dirak')+
+        ' • '+(bn.lama? 'barang lama' : 'masuk '+esc(dmy(bn.tgl)))+' • sisa '+num(bn.sisa)+' dus</div>'+
+      '<div class="card" style="margin:10px 0;border-color:#dc2626;background:#fee2e2;color:#991b1b">'+
+        '<b>Masih ada yang lebih tua.</b> Aturan FIFO: yang duluan masuk, duluan keluar — '+
+        'yang ini baru boleh disentuh setelah stok di bawah habis.</div>'+
+      '<label class="lb">Ambil dari sini dulu</label>'+
+      '<div class="card" style="margin:0 0 10px;border-color:#16a34a;background:#dcfce7;color:#166534">'+
+        '<div style="font-weight:800;font-size:16px">'+(tua.rak? '📍 RAK '+esc(tua.rak) : '📍 Belum dirak')+'</div>'+
+        '<div>'+(tua.lama? '📦 barang lama (paling tua)' : '🆕 masuk '+esc(dmy(tua.tgl)))+
+        ' • sisa <b>'+num(tua.sisa)+' dus</b></div></div>'+
+      '<button class="btn" onclick="ambilDus(bnCari(\''+esc(bnId(tua))+'\'))">👉 Ambil dari '+(tua.rak? 'rak '+esc(tua.rak) : 'sana')+'</button>'+
+      '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+    showEl('backDet');
+    state.pendBulk = null;
+    return;
+  }
+
+  var adaBatchLain = state.bn.filter(function(x){ return x.kode===bn.kode && num(x.sisa)>0; }).length>1;
   $('detBox').innerHTML = '<div class="grab"></div>'+
     '<h3>📦 '+esc(bn.nama||bn.kode)+'</h3>'+
     '<div class="muted">'+esc(bn.kode)+' • sisa <b>'+num(bn.sisa)+' dus</b>'+(bn.rak? ' • <b>RAK '+esc(bn.rak)+'</b>':' • belum dirak')+
       (num(bn.isi)? ' • '+num(bn.isi)+' '+esc(bn.satuan||'pcs')+'/dus':'')+
       ' • '+(bn.lama? 'barang lama' : ('masuk '+esc(dmy(bn.tgl))))+'</div>'+
-    pesanFifo+
-    (luar? '<label class="lb">Kenapa tidak ambil yang lama?</label>'+
-           '<input type="text" id="ambAlasan" placeholder="mis. dus lama tertimbun di tumpukan bawah" autocomplete="off">' : '')+
-    (tua && !luar && state.bn.filter(function(x){ return x.kode===bn.kode && num(x.sisa)>0; }).length>1
-      ? '<div class="muted" style="margin-top:6px">✅ Ini batch tertua SKU ini — sudah sesuai FIFO.</div>' : '')+
+    (adaBatchLain? '<div class="card" style="margin:8px 0 0;border-color:#16a34a;background:#dcfce7;color:#166534">'+
+      '<b>✅ Ini yang paling tua</b> — sudah sesuai FIFO.</div>' : '')+
     '<label class="lb">Ambil berapa dus?</label>'+
     '<div class="row"><button class="qbtn" onclick="ambilDusStep(-1)">−</button>'+
       '<input type="number" id="ambDus" inputmode="numeric" value="1" style="text-align:center;font-size:20px;font-weight:800">'+
@@ -3085,13 +3182,22 @@ function kirimAmbilDus(id){
   var bn = bnCari(id); if(!bn) return;
   var q = Math.min(num($('ambDus').value), num(bn.sisa));
   if(q<=0){ toast('Jumlah dus tidak valid'); return; }
-  var alasan = ($('ambAlasan') && $('ambAlasan').value.trim()) || '';
-  if($('ambAlasan') && !alasan){ toast('Isi dulu alasannya — ini yang membuat selisih FIFO bisa ditelusuri', 3200); return; }
+  var alasan = '';
+  // pengaman kedua di sisi app — server juga menolaknya, tapi lebih baik PIC
+  // diberi tahu di layar daripada menunggu balasan gagal
+  var tuaKirim = batchTertua(bn.kode);
+  if(tuaKirim && urutBatch(tuaKirim) < urutBatch(bn)){
+    ambilDus(bn);
+    toast('Habiskan dulu yang lebih tua di '+(tuaKirim.rak? 'rak '+tuaKirim.rak : 'rak lain'), 3200);
+    return;
+  }
   hide('backDet');
+  var fifoTeks = 'FIFO';
   var lama = {diambil:num(bn.diambil), sisa:num(bn.sisa)};
   bn.diambil = lama.diambil + q; bn.sisa = lama.sisa - q;
   state.ambil.unshift({no:'…', tanggal:todayStr(), waktu:'', koli:'BULK NORMAL'+(bn.rak? ' · RAK '+bn.rak:''), kode:bn.kode,
-                       nama:bn.nama, qty:q, sisa:bn.sisa, tujuan:state.tujuan, pic:state.user});
+                       nama:bn.nama, qty:q, sisa:bn.sisa, tujuan:state.tujuan, pic:state.user,
+                       catatan:alasan, tglMasuk:(bn.tgl || (bn.lama? 'barang lama' : '')), fifo:fifoTeks});
   $('aQ').value=''; renderAmbilLog(); if(state.screen==='bulk') renderBulk();
   toast('Mengambil '+q+' dus '+bn.kode+(bn.rak? ' dari rak '+bn.rak:'')+'…');
   antre({action:'bulkambil', sumber:'NORMAL', pic:state.user, tujuan:state.tujuan, catatan:alasan,
@@ -3399,8 +3505,10 @@ function score(o, toks){
 }
 function bindSearch(){
   var t=null;
+  $('aQ').addEventListener('input', function(){ clearTimeout(t); t=setTimeout(ambilCari,110); });
   $('aQ').addEventListener('keydown', function(e){
-    if(e.key==='Enter'){ e.preventDefault(); cariKoliAmbil(); }
+    if(e.key==='Escape'){ $('aQ').value=''; $('aRes').innerHTML=''; return; }
+    if(e.key==='Enter'){ e.preventDefault(); $('aRes').innerHTML=''; cariKoliAmbil(); }
   });
   var tb=null;
   $('bQ').addEventListener('input', function(){ clearTimeout(tb); tb=setTimeout(bulkCari,110); });
