@@ -1707,7 +1707,8 @@ function setBinFilter(f){ state.binFilter = f; renderBin(); }
 function setBinBrand(v){ state.binBrand = v||''; renderBin(); }
 function setBinKat(v){ state.binKat = v||''; renderBin(); }
 function setBinRecom(v){ state.binRecom = v||''; renderBin(); }
-function setBinUrut(){ state.binUrut = (state.binUrut==='laku')? '' : 'laku'; renderBin(); }
+/* satu tombol = satu urutan; ditekan lagi → kembali ke urutan bawaan sheet */
+function setBinUrut(mode){ state.binUrut = (state.binUrut===mode)? '' : mode; renderBin(); }
 /* "Jumlah Bin Recom" bisa berupa pecahan (1 · 0,5 · 0,25) dan kadang ditulis
    pakai koma — disamakan dulu supaya bisa dibandingkan & dikelompokkan */
 function angkaRecom(v){
@@ -1746,8 +1747,14 @@ function renderBin(){
     if(toks.length){ for(var i=0;i<toks.length;i++) if(x._h.indexOf(toks[i])<0) return false; }
     return true;
   });
-  // urutan: bawaan sheet, atau paling sering keluar dulu (buat menentukan level)
+  // urutan: bawaan sheet · paling sering keluar dulu (buat menentukan level) ·
+  // atau dikelompokkan per brand (buat relayout satu brand sekali jalan)
   if(state.binUrut==='laku') list = list.slice().sort(function(a,b){ return num(b.avgHari)-num(a.avgHari); });
+  else if(state.binUrut==='brand') list = list.slice().sort(function(a,b){
+    return String(a.brand||'').localeCompare(String(b.brand||''))
+        || String(a.kategori||'').localeCompare(String(b.kategori||''))
+        || String(a.nama||'').localeCompare(String(b.nama||''));
+  });
   var tulis = function(s){ return toks.length? hl(s,toks) : esc(s); };
   var warna = function(s){ return s.indexOf('FAST')>=0? 'b-ada' : (s.indexOf('DEAD')>=0? 'b-hab' : 'b-seb'); };
   $('nList').innerHTML = list.slice(0,300).map(function(x){
@@ -1777,8 +1784,10 @@ function renderBin(){
   $('nFilter').innerHTML = chip.map(function(c){
     return '<span class="pill'+(f===c[0]?' on':'')+'" onclick="setBinFilter(\''+c[0]+'\')">'+c[1]+'</span>';
   }).join('')+
-    '<span class="pill'+(state.binUrut==='laku'?' on':'')+'" onclick="setBinUrut()" '+
-    'title="Urutkan dari yang paling sering keluar">🔥 Paling laku dulu</span>';
+    '<span class="pill'+(state.binUrut==='laku'?' on':'')+'" onclick="setBinUrut(\'laku\')" '+
+    'title="Urutkan dari yang paling sering keluar">🔥 Paling laku dulu</span>'+
+    '<span class="pill'+(state.binUrut==='brand'?' on':'')+'" onclick="setBinUrut(\'brand\')" '+
+    'title="Kelompokkan per brand — enak untuk relayout satu brand sekali jalan">🏷️ Urut per brand</span>';
   isiPilihanKategori(kt);
   isiPilihanBrand(br, kt);       // daftar brand mengikuti kategori yang dipilih
   isiPilihanRecom(rc);
