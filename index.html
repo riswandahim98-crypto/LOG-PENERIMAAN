@@ -420,7 +420,8 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
 <div class="wrap hide" id="scBin">
   <div class="card">
     <div class="row">
-      <input type="search" id="nQ" placeholder="🔎 Cari nama / brand / kategori…" autocomplete="off">
+      <input type="search" id="nQ" placeholder="🔎 Cari nama / brand, atau scan barcode…" autocomplete="off">
+      <button class="btn sec sm" onclick="openScan(false,'bin')" title="Scan barcode barang">📷</button>
       <button class="btn sec sm" onclick="hapusCariBin()" title="Bersihkan">✕</button>
     </div>
     <div id="nFilter" style="margin-top:7px"></div>
@@ -1583,6 +1584,59 @@ function setBin(rows, info, config){
     o._h = norm(o.nama+' '+o.brand+' '+o.kategori+' '+o.status+' '+o.simpan+' '+o.alamat+' '+o.petugas);
     return o;
   });
+}
+/* ---------- scan barcode di layar BIN ----------
+   Database BIN cuma punya NAMA BARANG, tidak ada kolom kode. Jadi barcode yang
+   discan diterjemahkan dulu lewat master (kode → nama), baru namanya dicocokkan
+   ke baris BIN. Nama di kedua file tidak selalu sama persis, jadi pencocokannya
+   bertingkat: sama persis → salah satu memuat yang lain → semua kata cocok. */
+function cocokBinNama(nama){
+  var n = norm(nama);
+  if(!n) return [];
+  var sama = state.bin.filter(function(x){ return norm(x.nama)===n; });
+  if(sama.length) return sama;
+  var muat = state.bin.filter(function(x){
+    var b = norm(x.nama);
+    return b.indexOf(n)>=0 || n.indexOf(b)>=0;
+  });
+  if(muat.length) return muat;
+  var toks = n.split(' ').filter(function(t){ return t.length>1; });
+  if(!toks.length) return [];
+  return state.bin.filter(function(x){
+    var b = norm(x.nama);
+    for(var i=0;i<toks.length;i++) if(b.indexOf(toks[i])<0) return false;
+    return true;
+  });
+}
+function cariBinKode(teks){
+  var v = String(teks||'').trim();
+  if(!v) return false;
+  var m = state.byKode[normCode(v)] || state.byBar[normCode(v)];
+  if(!m){
+    $('nQ').value = v; renderBin();
+    toast('Kode "'+v+'" tidak ada di master data — dicarikan sebagai teks biasa', 3400);
+    return false;
+  }
+  var hit = cocokBinNama(m.nama);
+  if(hit.length===1){ openBinEdit(hit[0].i); return true; }
+  if(hit.length>1){
+    // beberapa varian mirip (mis. beda kadar nikotin) → biar PIC yang memilih
+    $('detBox').innerHTML = '<div class="grab"></div><h3>🔎 '+hit.length+' baris mirip</h3>'+
+      '<div class="muted">Barcode '+esc(m.kode)+' → <b>'+esc(m.nama)+'</b><br>Pilih yang benar:</div><div style="height:8px"></div>'+
+      hit.slice(0,25).map(function(x){
+        return '<div class="kirrow" onclick="hide(\'backDet\');openBinEdit('+x.i+')">'+
+          '<div class="g"><div class="n">'+esc(x.nama)+'</div>'+
+          '<div class="m">'+esc(x.brand)+' • '+esc(x.kategori)+' • stok '+x.qty+
+          (binSudah(x)? ' • <b>'+esc(x.alamat)+'</b>' : ' • belum ada bin')+'</div></div></div>';
+      }).join('')+'<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+    showEl('backDet');
+    return true;
+  }
+  // ada di master tapi tidak ada di database BIN — namanya tetap ditaruh di kotak
+  // cari supaya PIC bisa menelusuri sendiri kalau penulisannya beda jauh
+  $('nQ').value = m.nama; renderBin();
+  toast(m.kode+' ada di master ("'+m.nama+'") tapi tidak ketemu di database BIN', 4200);
+  return false;
 }
 function binSudah(o){ return !!(o.alamat || (o.rak && o.level && o.bin)); }
 /* sudah relayout = sudah punya alamat bin, ATAU sudah ditandai manual (mis. barang yang tak perlu bin) */
@@ -3598,7 +3652,11 @@ function bindSearch(){
   $('lgQ').addEventListener('keydown', function(e){ if(e.key==='Escape') hapusCariLog(); });
   var tn=null;
   $('nQ').addEventListener('input', function(){ clearTimeout(tn); tn=setTimeout(renderBin,110); });
-  $('nQ').addEventListener('keydown', function(e){ if(e.key==='Escape') hapusCariBin(); });
+  $('nQ').addEventListener('keydown', function(e){
+    if(e.key==='Escape'){ hapusCariBin(); return; }
+    // scanner pistol mengetik kode lalu Enter → langsung buka barisnya di BIN
+    if(e.key==='Enter'){ e.preventDefault(); cariBinKode($('nQ').value); }
+  });
   var tr=null;
   $('rQ').addEventListener('input', function(){ clearTimeout(tr); tr=setTimeout(renderRack,110); });
   $('rQ').addEventListener('keydown', function(e){
@@ -4768,6 +4826,12 @@ function openScan(modeKoli, target){
           closeScan();
           if(!b){ toast('Kode tidak ada di master: '+txt, 3200); return; }
           if(state.scanTarget==='ds') tanyaQtyDS(b); else tanyaDus(b);
+          return;
+        }
+        if(state.scanTarget==='bin'){             // scan barcode item → buka barisnya di database BIN
+          state._last=txt; state._lastT=Date.now();
+          closeScan();
+          cariBinKode(String(txt).trim());
           return;
         }
         if(state.scanTarget==='rack'){            // scan barcode item → buka editor posisi rak
