@@ -2422,23 +2422,45 @@ function cetakHasilCari(){
   }
 }
 
+/* =============== PENCARIAN DI MASTER DATA ===============
+   Dipakai 3 layar: Gudang Bulk, Dead Stock, dan Pendataan Ulang.
+
+   ⚠️ Dulu perulangannya berhenti setelah mengumpulkan 600 kecocokan
+   (`out.length<600`). Akibatnya untuk kata yang umum (mis. "salt"), item yang
+   letaknya di bagian bawah master TIDAK PERNAH diperiksa — walau sebenarnya
+   paling cocok. Sekarang seluruh master dipindai; dengan ±11.900 item makan
+   waktu ±5 ms, jadi tak ada alasan dipotong. */
+var CARI_TAMPIL = 12;                     // baris hasil yang ditampilkan sekaligus
+function cariMaster(toks){
+  var out = [];
+  for(var i=0;i<state.master.length;i++){
+    var s = score(state.master[i], toks);
+    if(s>=0) out.push([s, state.master[i]]);
+  }
+  out.sort(function(a,b){ return b[0]-a[0]; });
+  return out;
+}
+/* baris kecil di bawah hasil: berapa yang tidak ikut tampil */
+function sisaCari(out){
+  return out.length > CARI_TAMPIL
+    ? '<div class="muted" style="padding:7px 4px">+'+(out.length-CARI_TAMPIL)+
+      ' barang lain juga cocok — ketik lebih spesifik (mis. tambah merek atau kadar nikotinnya).</div>'
+    : '';
+}
+
 /* pencarian barang di layar bulk (untuk menambah data) */
 function bulkCari(){
   var box = $('bRes'); if(!box) return;
   var v = $('bQ').value.trim();
   if(!v || (state.bMode||'normal')!=='normal'){ box.innerHTML=''; return; }
   var toks = norm(v).split(' ').filter(Boolean);
-  var out=[];
-  for(var i=0;i<state.master.length && out.length<600;i++){
-    var s = score(state.master[i], toks);
-    if(s>=0) out.push([s, state.master[i]]);
-  }
-  out.sort(function(a,b){ return b[0]-a[0]; });
-  box.innerHTML = out.slice(0,8).map(function(p){
+  var out = cariMaster(toks);
+  box.innerHTML = out.slice(0,CARI_TAMPIL).map(function(p){
     var o=p[1];
     return '<div class="it" onclick="tanyaDus(state.master['+o.i+'])">'+
       '<div class="n">'+hl(o.nama,toks)+'</div><div class="m">'+hl(o.kode,toks)+(o.satuan?' • '+esc(o.satuan):'')+'</div></div>';
-  }).join('');
+  }).join('') + sisaCari(out)
+  || '<div class="muted" style="padding:8px 4px">Tidak ada yang cocok di master data.</div>';
 }
 
 function bulkTambah(){
@@ -2764,17 +2786,13 @@ function dsCari(){
   var v = $('dQ').value.trim();
   if(!v){ box.innerHTML=''; return; }
   var toks = norm(v).split(' ').filter(Boolean);
-  var out=[];
-  for(var i=0;i<state.master.length && out.length<600;i++){
-    var s = score(state.master[i], toks);
-    if(s>=0) out.push([s, state.master[i]]);
-  }
-  out.sort(function(a,b){ return b[0]-a[0]; });
-  box.innerHTML = out.slice(0,8).map(function(p){
+  var out = cariMaster(toks);
+  box.innerHTML = out.slice(0,CARI_TAMPIL).map(function(p){
     var o=p[1];
     return '<div class="it" onclick="tanyaQtyDS(state.master['+o.i+'])">'+
       '<div class="n">'+hl(o.nama,toks)+'</div><div class="m">'+hl(o.kode,toks)+(o.satuan?' • '+esc(o.satuan):'')+'</div></div>';
-  }).join('');
+  }).join('') + sisaCari(out)
+  || '<div class="muted" style="padding:8px 4px">Tidak ada yang cocok di master data.</div>';
 }
 
 function tanyaQtyDS(o){
@@ -4553,13 +4571,9 @@ function puCari(){
   var box=$('uRes'); if(!box) return;
   var v=$('uQ').value.trim();
   if(!v || !state.puRak){ box.innerHTML=''; return; }
-  var toks=norm(v).split(' ').filter(Boolean), out=[];
-  for(var i=0;i<state.master.length && out.length<600;i++){
-    var s=score(state.master[i],toks);
-    if(s>=0) out.push([s,state.master[i]]);
-  }
-  out.sort(function(a,b){ return b[0]-a[0]; });
-  box.innerHTML = out.slice(0,8).map(function(p){
+  var toks=norm(v).split(' ').filter(Boolean);
+  var out = cariMaster(toks);
+  box.innerHTML = out.slice(0,CARI_TAMPIL).map(function(p){
     var o=p[1], ada=puBaris(state.puRak).filter(function(x){ return x.kode===o.kode; })[0];
     // diketik namanya = barcode-nya kemungkinan belum tertempel → ditandai perlu stiker
     return '<div class="it" onclick="tambahPU(state.master['+o.i+'],1,\'tambah\',1)">'+
