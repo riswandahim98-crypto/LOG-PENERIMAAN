@@ -4437,12 +4437,12 @@ function withQR(cb){
    terjadi selama pendataan berlangsung akan tertimpa angka lama lagi. */
 
 /* Cadangan kalau server belum sempat menjawab: rak 1–16 level A–D (rak 14 sampai C)
-   + zona NON RACK A–D. Daftar yang dipakai tetap yang dari server. */
+   + zona NON RACK A–E. Daftar yang dipakai tetap yang dari server. */
 function rakDaftarPU(){
   if(state.rakDaftar && state.rakDaftar.length) return state.rakDaftar;
   var out=[], cfg=[[1,4],[2,4],[3,4],[4,4],[5,4],[6,4],[7,4],[8,4],[9,4],[10,4],[11,4],[12,4],[13,4],[14,3],[15,4],[16,4]];
   cfg.forEach(function(c){ for(var j=0;j<c[1];j++) out.push(c[0]+String.fromCharCode(65+j)); });
-  ['A','B','C','D'].forEach(function(h){ out.push('NON RACK '+h); });
+  ['A','B','C','D','E'].forEach(function(h){ out.push('NON RACK '+h); });
   return out;
 }
 function simpanPULokal(){
