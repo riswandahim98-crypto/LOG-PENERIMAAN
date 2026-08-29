@@ -378,6 +378,12 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <div class="muted">Pendataan posisi barang di rak: rak · level · bin, stiker, cetak QR</div></div>
     <span class="muted">›</span>
   </div>
+  <div class="menucard" onclick="pilihModul('mr2')">
+    <div class="mi">📍</div>
+    <div class="mg"><div class="mt">Master Rack V2</div>
+      <div class="muted">Pilih rak &amp; level dulu, lalu scan — barangnya langsung terplot di alamat itu (mis. 1A-3)</div></div>
+    <span class="muted">›</span>
+  </div>
   <div class="menucard" onclick="pilihModul('bin')">
     <div class="mi">🧱</div>
     <div class="mg"><div class="mt">BIN Installation</div>
@@ -490,6 +496,25 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     <div id="bFindInfo"></div>
     <div id="bList"></div>
   </div>
+</div>
+
+<!-- ============ MASTER RACK V2 (pilih rak+level → scan) ============ -->
+<div class="wrap hide" id="scMR">
+  <div class="card" id="mHead"></div>
+  <div class="card hide" id="mCari">
+    <div class="row">
+      <input type="search" id="mQ" placeholder="🔍 Scan barcode / ketik nama barang…" autocomplete="off">
+      <button class="btn sec sm" onclick="openScan(false,'mr2')" title="Scan pakai kamera (kamera tetap terbuka)">📷</button>
+    </div>
+    <div class="res" id="mRes"></div>
+    <div class="muted" style="margin-top:6px">Tiap scan langsung terplot di alamat yang dipilih. Satu barang boleh ada di beberapa lokasi.</div>
+  </div>
+  <div class="card hide" id="mListCard">
+    <h2>📍 Isi lokasi ini <span class="muted" id="mCount"></span><span class="sp2"></span>
+      <button class="lnk" onclick="undoMR()">↩ Batal scan terakhir</button></h2>
+    <div id="mList"></div>
+  </div>
+  <div class="card hide" id="mGrid"></div>
 </div>
 
 <!-- ============ PENDATAAN ULANG (hitung ulang per rak) ============ -->
@@ -764,7 +789,7 @@ var DEFAULT_PICS = [
 var KIRIMAN_WAJIB = true;  // tiap koli harus menempel ke satu kiriman (vendor + no surat jalan)
 var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1', draft:'tk_draft_v1',
           kiriman:'tk_kiriman', pending:'tk_pending', rack:'tk_rack_v1', antre:'tk_antre_v1', bin:'tk_bin_v1', stiker:'tk_stiker_v1',
-          pu:'tk_pu_v1', rakd:'tk_rakd_v1'};
+          pu:'tk_pu_v1', rakd:'tk_rakd_v1', mr2:'tk_mr2_v1'};
 /* Jeda pengumpul: operasi yang terjadi dalam rentang ini digabung jadi SATU kiriman.
    Satu panggilan ke Apps Script memakan ±3 detik apa pun isinya, jadi menggabung
    8 simpanan = 3 detik, bukan 24 detik. Nilainya kecil supaya tetap terasa langsung. */
@@ -784,6 +809,8 @@ var state = {
   pcData:[], pcPilih:null, pcNilai:'', batchFilter:'',
   // modul 7 — pendataan ulang
   pu:{rows:[], rak:[]}, rakDaftar:[], puRak:'', puUndo:[], puMuat:false,
+  // modul 8 — master rack v2 (rak + level → alamat "1A-3")
+  mr2:[], mr2Info:null, mrRak:'', mrLevel:'', mrUndo:[], mrMuat:false,
   // jawaban terakhir "barang lama / tanggal masuk" — diingat supaya PIC tak mengisi ulang tiap SKU
   bLama:1, bTgl:'', bStik:0
 };
@@ -1124,7 +1151,8 @@ function enterApp(){
 function show(which){
   state.screen = which;
   var map = {menu:'scMenu', sesi:'scSesi', koli:'scKoli', buat:'scBuat', riwayat:'scRiwayat',
-             bulk:'scBulk', ds:'scDS', ambil:'scAmbil', rack:'scRack', bin:'scBin', stiker:'scStiker', pu:'scPU'};
+             bulk:'scBulk', ds:'scDS', ambil:'scAmbil', rack:'scRack', bin:'scBin', stiker:'scStiker',
+             pu:'scPU', mr2:'scMR'};
   for(var k in map) $(map[k]).classList.toggle('hide', k!==which);
   var bulkMode = (state.modul==='bulk');
   $('actSesi').classList.toggle('hide', which!=='sesi');
@@ -1152,7 +1180,8 @@ function show(which){
     : which==='rack' ? '🗺️ Master Rack'
     : which==='bin' ? '🧱 BIN Installation'
     : which==='stiker' ? '🏷️ Print Barcode'
-    : which==='pu' ? ('🔄 Pendataan Ulang'+(state.puRak? ' · '+state.puRak : '')) : '🖨️ Label';
+    : which==='pu' ? ('🔄 Pendataan Ulang'+(state.puRak? ' · '+state.puRak : ''))
+    : which==='mr2' ? ('📍 Master Rack V2'+(mrAlamat()? ' · '+mrAlamat() : '')) : '🖨️ Label';
   if(which==='menu'){ renderMenu(); }
   if(which==='sesi'){ renderSesi(); }
   if(which==='koli'){ renderKoliList(); }
@@ -1163,6 +1192,7 @@ function show(which){
   if(which==='bin'){ if(!state.bin.length) loadBin(); else renderBin(); setTimeout(function(){ $('nQ').focus(); }, 60); }
   if(which==='stiker'){ if(!state.stiker.length) loadStiker(); else renderStiker(); setTimeout(function(){ $('tQ').focus(); }, 60); }
   if(which==='pu'){ if(!state.puMuat) loadPU(); else renderPU(); }
+  if(which==='mr2'){ if(!state.mrMuat) loadMR(); else renderMR(); }
   if(which==='riwayat'){ if(!state.koli.length) loadKoli(true); else renderKoli(); }
   if(which==='buat') setTimeout(function(){ $('q').focus(); }, 60);
 }
@@ -1171,6 +1201,9 @@ function goBack(){
   if(state.screen==='ds'){ show('bulk'); return; }
   // dari isi satu rak → kembali ke petak rak dulu, baru ke menu
   if(state.screen==='pu' && state.puRak){ state.puRak=''; renderPU(); return; }
+  // dari isi satu alamat → kembali ke pemilih level, lalu ke petak rak
+  if(state.screen==='mr2' && state.mrLevel){ state.mrLevel=''; renderMR(); return; }
+  if(state.screen==='mr2' && state.mrRak){ state.mrRak=''; renderMR(); return; }
   if(state.screen==='buat'){
     if(draft.items.length && !state.editNo && !confirm('Koli ini belum disimpan. Tinggalkan?')) return;
     show(state.modul==='bulk' ? 'bulk' : (state.sesiNo? 'koli' : 'sesi'));
@@ -1190,6 +1223,7 @@ function pilihModul(m){
   else if(m==='bin') show('bin');
   else if(m==='stiker') show('stiker');
   else if(m==='pu') show('pu');
+  else if(m==='mr2') show('mr2');
   else show('ambil');
 }
 
@@ -3640,6 +3674,19 @@ function bindSearch(){
      jadi menembak dus yang sama 3× langsung jadi 3 dus tanpa menyentuh layar.
      Jeda 400 ms hanya menahan scanner yang menembak dobel sendiri; scan manusia
      yang berturut-turut jaraknya jauh lebih panjang, jadi tidak ikut tertahan. */
+  /* Master Rack V2 — scanner pistol: kode + Enter langsung terplot di alamat aktif */
+  var tm=null;
+  $('mQ').addEventListener('input', function(){ clearTimeout(tm); tm=setTimeout(mrCari,110); });
+  $('mQ').addEventListener('keydown', function(e){
+    if(e.key==='Escape'){ $('mQ').value=''; $('mRes').innerHTML=''; return; }
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    var v = $('mQ').value.trim();
+    if(!v) return;
+    var hit = state.byKode[normCode(v)] || state.byBar[normCode(v)];
+    if(!hit){ toast('Kode tidak ada di master: '+v, 3000); return; }
+    tambahMR(hit);
+  });
   var tu=null;
   $('uQ').addEventListener('input', function(){ clearTimeout(tu); tu=setTimeout(puCari,110); });
   $('uQ').addEventListener('keydown', function(e){
@@ -4807,6 +4854,196 @@ function kunciPU(kosong){
     .catch(function(e){ alert('Gagal mengunci rak: '+e.message); });
 }
 
+/* ================= MODUL 8: MASTER RACK V2 =================
+   Peta lokasi barang. Alamatnya 2 bagian: rak + level → "1A-3".
+   Cara isinya seperti Pendataan Ulang: pilih rak → pilih level → scan.
+   Satu barang BOLEH ada di beberapa lokasi, jadi identitas baris = kode + alamat. */
+
+function mrAlamat(){ return (state.mrRak && state.mrLevel) ? (state.mrRak+'-'+state.mrLevel) : ''; }
+function mrRakDaftar(){
+  var c = state.rackCfg;
+  if(c && c.racks && c.racks.length) return c.racks;
+  var out=[], cfg=[[1,7],[2,4],[3,4],[4,4],[5,4],[6,4],[7,4],[8,4],[9,5],[10,6]];
+  cfg.forEach(function(x){ for(var j=0;j<x[1];j++) out.push(x[0]+String.fromCharCode(65+j)); });
+  return out;
+}
+function mrLevelDaftar(){
+  var n = (state.rackCfg && num(state.rackCfg.levels)) || 6;
+  var out=[]; for(var i=1;i<=n;i++) out.push(String(i));
+  return out;
+}
+function mrIsi(alamat){
+  var a = String(alamat||'').toUpperCase();
+  return state.mr2.filter(function(x){ return String(x.alamat||'').toUpperCase()===a; });
+}
+function mrIsiRak(rak){
+  var r = String(rak||'').toUpperCase();
+  return state.mr2.filter(function(x){ return String(x.rak||'').toUpperCase()===r; });
+}
+function simpanMRLokal(){
+  try{ localStorage.setItem(LS.mr2, JSON.stringify({rows:state.mr2, info:state.mr2Info})); }catch(e){}
+}
+function loadMR(){
+  try{
+    var c = localStorage.getItem(LS.mr2);
+    if(c){ var o=JSON.parse(c)||{}; state.mr2 = o.rows||[]; state.mr2Info = o.info||null; }
+  }catch(e){}
+  renderMR();
+  postExec({action:'mr2'}, 2, 60000).then(function(o){ state.mrMuat=true; setMR(o); })
+    .catch(function(e){ toast('Gagal memuat Master Rack V2: '+e.message, 3400); });
+}
+function setMR(o){
+  if(o && o.config) state.rackCfg = o.config;
+  if(o && o.mr2){
+    // [kode, nama, rak, level, alamat, pic, waktu, row]
+    state.mr2 = (o.mr2.rows||[]).map(function(r){
+      return {kode:r[0], nama:r[1], rak:r[2], level:String(r[3]), alamat:r[4], pic:r[5], waktu:r[6], row:r[7]};
+    });
+    state.mr2Info = {sheet:o.mr2.sheet, url:o.mr2.url, waktu:o.mr2.waktu, total:o.mr2.totalBaris};
+  }
+  simpanMRLokal();
+  renderMR();
+}
+
+function renderMR(){
+  if(!state.mrRak){ renderMRRak(); return; }
+  if(!state.mrLevel){ renderMRLevel(); return; }
+  renderMRIsi();
+}
+
+/* langkah 1 — pilih rak */
+function renderMRRak(){
+  hide('mCari'); hide('mListCard'); showEl('mGrid');
+  var daftar = mrRakDaftar();
+  var terisi = {};
+  state.mr2.forEach(function(x){ terisi[String(x.alamat||'').toUpperCase()] = 1; });
+  $('mHead').innerHTML = '<h2>📍 Master Rack V2</h2>'+
+    '<div class="stat" style="margin-bottom:6px">'+
+      '<div><b>'+state.mr2.length+'</b><s>baris terdata</s></div>'+
+      '<div><b>'+Object.keys(terisi).length+'</b><s>alamat terisi</s></div>'+
+      '<div><b>'+daftar.length*mrLevelDaftar().length+'</b><s>alamat tersedia</s></div></div>'+
+    '<div class="muted">Pilih rak → pilih level → scan barangnya. Alamatnya jadi seperti <b>1A-3</b>. '+
+    (state.mr2Info&&state.mr2Info.sheet? 'Tersimpan di tab <b>'+esc(state.mr2Info.sheet)+'</b> pada file master item.' : '')+'</div>';
+  var grup={}, urut=[];
+  daftar.forEach(function(r){
+    var g=(String(r).match(/^\d+/)||['?'])[0];
+    if(!grup[g]){ grup[g]=[]; urut.push(g); }
+    grup[g].push(r);
+  });
+  $('mGrid').innerHTML = '<h2>🗄️ Pilih rak</h2>'+urut.map(function(g){
+    return '<div class="rkgrp"><div class="rl">Rak '+esc(g)+'</div><div class="rkw">'+
+      grup[g].map(function(r){
+        var n = mrIsiRak(r).length;
+        return '<div class="rk'+(n? ' kunci':'')+'" onclick="pilihRakMR(\''+esc(r)+'\')">'+esc(r)+
+               '<s>'+(n? n+' item' : '—')+'</s></div>';
+      }).join('')+'</div></div>';
+  }).join('');
+}
+
+/* langkah 2 — pilih level */
+function renderMRLevel(){
+  hide('mCari'); hide('mListCard'); showEl('mGrid');
+  var lvl = mrLevelDaftar();
+  $('mHead').innerHTML = '<div class="row"><div style="flex:1;min-width:0">'+
+      '<div style="font-weight:800;font-size:16px">Rak '+esc(state.mrRak)+'</div>'+
+      '<div class="muted">'+mrIsiRak(state.mrRak).length+' item terdata di rak ini</div></div>'+
+      '<button class="btn sec sm" onclick="state.mrRak=\'\';renderMR()">🗄️ Ganti rak</button></div>';
+  $('mGrid').innerHTML = '<h2>🪜 Pilih level</h2><div class="rkw">'+
+    lvl.map(function(L){
+      var n = mrIsi(state.mrRak+'-'+L).length;
+      return '<div class="rk'+(n? ' kunci':'')+'" style="min-width:66px" onclick="pilihLevelMR(\''+esc(L)+'\')">'+
+             esc(state.mrRak)+'-'+esc(L)+'<s>'+(n? n+' item' : 'kosong')+'</s></div>';
+    }).join('')+'</div>';
+}
+
+function pilihRakMR(rak){ state.mrRak=rak; state.mrLevel=''; renderMR(); }
+function pilihLevelMR(L){
+  state.mrLevel=L; state.mrUndo=[];
+  renderMR();
+  $('brandTxt').textContent = '📍 Master Rack V2 · '+mrAlamat();
+  setTimeout(function(){ var el=$('mQ'); if(el) el.focus(); }, 80);
+}
+
+/* langkah 3 — isi alamatnya */
+function renderMRIsi(){
+  var alamat = mrAlamat(), isi = mrIsi(alamat);
+  hide('mGrid'); showEl('mCari'); showEl('mListCard');
+  $('mHead').innerHTML = '<div class="row"><div style="flex:1;min-width:0">'+
+      '<div style="font-weight:800;font-size:22px;letter-spacing:.5px">'+esc(alamat)+'</div>'+
+      '<div class="muted">Rak '+esc(state.mrRak)+' · level '+esc(state.mrLevel)+' — barang yang discan masuk ke sini</div></div>'+
+      '<button class="btn sec sm" onclick="state.mrLevel=\'\';renderMR()">🪜 Ganti level</button></div>';
+  $('mCount').textContent = isi.length? (isi.length+' item') : '';
+  $('mList').innerHTML = isi.length ? isi.map(function(x){
+    var lain = state.mr2.filter(function(y){ return y.kode===x.kode && y.alamat!==x.alamat; });
+    return '<div class="arow"><div class="g">'+
+      '<div class="n">'+esc(x.nama||x.kode)+'</div>'+
+      '<div class="s">'+esc(x.kode)+(x.pic? ' • 👤 '+esc(x.pic):'')+(x.waktu? ' • '+esc(x.waktu):'')+
+        (lain.length? ' • <b>juga di '+lain.map(function(y){ return esc(y.alamat); }).join(', ')+'</b>' : '')+
+      '</div></div>'+
+      '<button class="qbtn" onclick="hapusMR(\''+esc(x.kode)+'\',\''+esc(x.alamat)+'\')" title="Hapus dari lokasi ini">🗑️</button>'+
+      '</div>';
+  }).join('') : '<div class="muted" style="padding:8px 2px">Belum ada barang di '+esc(alamat)+' — scan yang pertama.</div>';
+}
+
+function mrCari(){
+  var box=$('mRes'); if(!box) return;
+  var v=$('mQ').value.trim();
+  if(!v || !mrAlamat()){ box.innerHTML=''; return; }
+  var toks=norm(v).split(' ').filter(Boolean);
+  var out = cariMaster(toks);
+  box.innerHTML = out.slice(0,CARI_TAMPIL).map(function(p){
+    var o=p[1];
+    var di = state.mr2.filter(function(x){ return x.kode===o.kode; });
+    return '<div class="it" onclick="tambahMR(state.master['+o.i+'])">'+
+      '<div class="n">'+hl(o.nama,toks)+'</div><div class="m">'+hl(o.kode,toks)+
+      (di.length? ' • sudah di '+di.map(function(x){ return esc(x.alamat); }).join(', ') : '')+'</div></div>';
+  }).join('') + sisaCari(out)
+  || '<div class="muted" style="padding:8px 4px">Tidak ada yang cocok di master data.</div>';
+}
+
+function tambahMR(o){
+  if(!o) return;
+  var alamat = mrAlamat();
+  if(!alamat){ toast('Pilih rak & level dulu'); return; }
+  var sudah = state.mr2.filter(function(x){ return x.kode===o.kode && x.alamat===alamat; })[0];
+  $('mQ').value=''; $('mRes').innerHTML='';
+  if(sudah){ toast(o.kode+' sudah ada di '+alamat); return; }
+  var baris = {kode:o.kode, nama:o.nama||'', rak:state.mrRak, level:state.mrLevel,
+               alamat:alamat, pic:state.user, waktu:'', row:0};
+  state.mr2.unshift(baris);
+  state.mrUndo.push(baris);
+  if(state.mrUndo.length>80) state.mrUndo.shift();
+  simpanMRLokal(); renderMR();
+  var lain = state.mr2.filter(function(x){ return x.kode===o.kode && x.alamat!==alamat; });
+  toast(o.kode+' → '+alamat + (lain.length? ' (juga di '+lain.map(function(x){return x.alamat;}).join(', ')+')' : ''), lain.length? 3400 : 2200);
+  antre({action:'mr2simpan', kode:o.kode, nama:o.nama||'', rak:state.mrRak, level:state.mrLevel, pic:state.user,
+         __gagal:function(e){
+           state.mr2 = state.mr2.filter(function(x){ return x!==baris; });
+           simpanMRLokal(); renderMR(); alert('Gagal menyimpan lokasi: '+e.message);
+         }}, {tag:'mr-'+o.kode});
+}
+
+function undoMR(){
+  var u = (state.mrUndo||[]).pop();
+  if(!u){ toast('Tidak ada scan yang bisa dibatalkan'); return; }
+  hapusMR(u.kode, u.alamat, true);
+}
+
+function hapusMR(kode, alamat, diam){
+  var x = state.mr2.filter(function(y){ return y.kode===kode && y.alamat===alamat; })[0];
+  if(!x){ toast('Barisnya sudah tidak ada'); return; }
+  if(!diam && !confirm('Hapus '+(x.nama||kode)+' dari '+alamat+'?\n\nLokasi lain barang ini tidak ikut terhapus.')) return;
+  var posisi = state.mr2.indexOf(x);
+  state.mr2 = state.mr2.filter(function(y){ return y!==x; });
+  simpanMRLokal(); renderMR();
+  toast((diam? '↩ ':'Dihapus: ')+kode+' dari '+alamat);
+  antre({action:'mr2hapus', kode:kode, alamat:alamat, pic:state.user,
+         __gagal:function(e){
+           state.mr2.splice(Math.max(0,posisi), 0, x);
+           simpanMRLokal(); renderMR(); alert('Gagal menghapus: '+e.message);
+         }}, {tag:'mr-'+kode});
+}
+
 /* ================= SCANNER ================= */
 function openScan(modeKoli, target){
   hangatkan();
@@ -4818,7 +5055,7 @@ function openScan(modeKoli, target){
       state.scanner = new Html5Qrcode('reader');
       state.scanner.start({facingMode:'environment'}, {fps:10, qrbox:{width:260, height:170}}, function(txt){
         // pendataan ulang perlu tembakan beruntun (1 tembakan = 1 dus) → jedanya pendek
-        var jedaSama = (state.scanTarget==='pu') ? 700 : 1500;
+        var jedaSama = (state.scanTarget==='pu') ? 700 : (state.scanTarget==='mr2' ? 900 : 1500);
         if(state._last===txt && Date.now()-state._lastT<jedaSama) return;
         if(state.scanKoli){                       // scan QR label koli → buka isinya untuk diambil
           state._last=txt; state._lastT=Date.now();
@@ -4840,6 +5077,15 @@ function openScan(modeKoli, target){
           closeScan();
           if(!b){ toast('Kode tidak ada di master: '+txt, 3200); return; }
           if(state.scanTarget==='ds') tanyaQtyDS(b); else tanyaDus(b);
+          return;
+        }
+        // Master Rack V2: kamera dibiarkan terbuka — satu alamat biasanya diisi
+        // banyak barang beruntun, jadi tidak perlu buka-tutup kamera tiap item
+        if(state.scanTarget==='mr2'){
+          var bm = state.byKode[normCode(txt)] || state.byBar[normCode(txt)];
+          state._last=txt; state._lastT=Date.now();
+          if(!bm){ toast('Kode tidak ada di master: '+txt, 2600); return; }
+          tambahMR(bm);
           return;
         }
         if(state.scanTarget==='bin'){             // scan barcode item → buka barisnya di database BIN
