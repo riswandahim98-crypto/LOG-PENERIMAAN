@@ -571,10 +571,12 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <button class="lnk" onclick="muatLogPenuh()" id="lgMore">Muat lebih banyak</button></h2>
     <!-- cari di dalam catatan transaksi: barang, rak, tujuan, PIC, tanggal, no ambil -->
     <div class="row" style="margin-bottom:7px">
-      <input type="search" id="lgQ" placeholder="🔎 Cari barang / rak / PIC / tanggal / A-0007…" autocomplete="off">
+      <input type="search" id="lgQ" placeholder="🔎 Riwayat per barang — ketik nama / kode / rak / PIC / A-0007…" autocomplete="off">
       <button class="btn sec sm" id="lgX" onclick="hapusCariLog()" title="Bersihkan pencarian">✕</button>
     </div>
     <div id="lgFilter" style="margin-bottom:7px"></div>
+    <!-- ringkasan riwayat satu barang: muncul kalau pencarian menyisakan 1 SKU -->
+    <div id="lgRingkas"></div>
     <div id="ambilLog"></div>
   </div>
 </div>
@@ -803,7 +805,7 @@ var state = {
   modul:'penerimaan', bFilter:'', ambil:[], ambilKoli:null, tujuan:'ETALASE', sheets:null,
   rack:[], rackByKode:{}, rackCfg:null, rFilter:'', rackEdit:null, scanTarget:'item',
   bn:[], ds:[], dsItem:{}, bMode:'normal', dsNo:'', pendBulk:null, qtyMode:'',
-  bin:[], binInfo:null, binFilter:'', binBrand:'', binKat:'', binRecom:'', binUrut:'', binEdit:null, logFilter:'', logPenuh:false,
+  bin:[], binInfo:null, binFilter:'', binBrand:'', binKat:'', binRecom:'', binUrut:'', binEdit:null, logFilter:'', logPenuh:false, logMuatOtomatis:false,
   stiker:[], stikerInfo:null, stikerBrand:'', selStiker:{},
   antre:[], antreJalan:0, antreTimer:null, hangatT:0, punyaBatch:null, dsTmp:{}, dsKey:{}, rakFilter:'',
   pcData:[], pcPilih:null, pcNilai:'', batchFilter:'',
@@ -2323,6 +2325,7 @@ function renderBulk(){
             ' • '+(x.lama? 'barang lama' : (x.tgl? 'masuk '+esc(dmy(x.tgl)) : 'tanpa tanggal'))+
             (x.stik? ' • <b>perlu stiker</b>':'')+'</div>'+
         '</div>'+
+        '<button class="qbtn" onclick="event.stopPropagation();riwayatItem(\''+esc(x.kode)+'\')" title="Riwayat transaksi barang ini">🧾</button>'+
         '<button class="qbtn" onclick="event.stopPropagation();pindahRak(\''+esc(id)+'\')" title="Pindah rak">↔️</button>'+
         '<button class="qbtn" onclick="event.stopPropagation();printBNLabel(\''+esc(id)+'\')" title="Cetak label">🖨️</button>'+
       '</div>';
@@ -3462,6 +3465,7 @@ function setLogFilter(f){ state.logFilter = f; renderAmbilLog(); }
 function hapusCariLog(){
   if($('lgQ')) $('lgQ').value='';
   state.logFilter='';
+  if($('lgRingkas')) $('lgRingkas').innerHTML='';
   renderAmbilLog();
   if($('lgQ')) $('lgQ').focus();
 }
@@ -3476,6 +3480,14 @@ function renderAmbilLog(){
   if(!$('ambilLog')) return;
   var q = norm(($('lgQ') && $('lgQ').value) || ''), toks = q? q.split(' ').filter(Boolean) : [];
   var f = state.logFilter||'';
+  /* Server hanya mengirim 300 transaksi terakhir. Kalau dicari tanpa memuat
+     semuanya, hasilnya diam-diam tidak lengkap — riwayat lama tidak ikut muncul
+     padahal tidak ada tanda apa pun. Jadi begitu pencarian dipakai, sisanya
+     dimuat sekali di latar. */
+  if((toks.length || f) && !state.logPenuh && !state.logMuatOtomatis){
+    state.logMuatOtomatis = true;
+    muatLogPenuh();
+  }
   var list = (state.ambil||[]).filter(function(a){
     var sumber = String(a.koli||'');
     if(f==='ambil' && String(a.no||'')==='PINDAH') return false;
@@ -3483,6 +3495,7 @@ function renderAmbilLog(){
     if(f==='ds' && sumber.indexOf('DS-')<0) return false;
     if(f==='hariini' && a.tanggal!==todayStr()) return false;
     if(f==='luarfifo' && String(a.fifo||'').indexOf('LUAR')<0) return false;
+    if(f==='batal' && String(a.status||'').toUpperCase()!=='BATAL') return false;
     if(toks.length){
       var teks = norm([a.no, a.kode, a.nama, sumber, a.tujuan, a.pic, a.tanggal, dmy(a.tanggal), a.waktu,
                        a.fifo, a.catatan, a.tglMasuk].join(' '));
@@ -3495,20 +3508,28 @@ function renderAmbilLog(){
   $('ambilLog').innerHTML = tampil.map(function(a){
     var pindah = String(a.no||'')==='PINDAH';
     var luar = String(a.fifo||'').indexOf('LUAR')>=0;
-    return '<div class="arow"><div class="g">'+
-      '<div class="n">'+tulis(a.nama||a.kode)+' <span class="muted">×'+a.qty+'</span>'+
+    var batal = String(a.status||'').toUpperCase()==='BATAL';
+    // transaksi yang sudah tersimpan (punya nomor) boleh dibatalkan; pemindahan rak
+    // tidak — untuk itu jalannya memindahkan balik lewat tombol ↔️
+    var bisaBatal = !batal && !pindah && a.no && a.no!=='…';
+    return '<div class="arow"'+(batal? ' style="opacity:.55"':'')+'><div class="g">'+
+      '<div class="n"'+(batal? ' style="text-decoration:line-through"':'')+'>'+tulis(a.nama||a.kode)+' <span class="muted">×'+a.qty+'</span>'+
+        (batal? '<span class="bstat b-hab">BATAL</span>' : '')+
         (pindah? '<span class="bstat b-seb">pindah rak</span>' : '')+
-        (luar? '<span class="bstat b-seb">⚠️ luar FIFO</span>' : (a.fifo==='FIFO'? '<span class="bstat b-ada">FIFO</span>':''))+'</div>'+
+        (!batal && luar? '<span class="bstat b-seb">⚠️ luar FIFO</span>' : (!batal && a.fifo==='FIFO'? '<span class="bstat b-ada">FIFO</span>':''))+'</div>'+
       '<div class="s">'+tulis(a.koli)+' → '+tulis(a.tujuan||'-')+' • '+tulis(a.pic||'-')+
         (a.waktu? ' • '+tulis(a.waktu) : (a.tanggal? ' • '+dmy(a.tanggal):''))+
         (a.tglMasuk? ' • batch '+tulis(a.tglMasuk==='barang lama'? 'barang lama' : dmy(a.tglMasuk)) : '')+
         (a.no && a.no!=='…' && !pindah? ' • '+tulis(a.no) : '')+
-        (luar&&a.catatan? '<br><span class="err">alasan: '+tulis(a.catatan)+'</span>' : '')+'</div></div></div>';
+        ((luar||batal)&&a.catatan? '<br><span class="err">'+tulis(a.catatan)+'</span>' : '')+'</div></div>'+
+      (bisaBatal? '<button class="qbtn" onclick="batalTransaksi(\''+esc(a.no)+'\')" title="Batalkan transaksi ini">↩️</button>' : '')+
+      '</div>';
   }).join('') || '<div class="muted">'+
     (toks.length||f ? 'Tidak ada transaksi yang cocok.' : 'Belum ada transaksi tercatat.')+'</div>';
 
+  ringkasLogItem(list, toks);
   var chip = [['','Semua'],['hariini','Hari ini'],['ambil','Pengambilan'],['pindah','Pindah rak'],
-              ['ds','Dead stock'],['luarfifo','⚠️ Luar FIFO']];
+              ['ds','Dead stock'],['luarfifo','⚠️ Luar FIFO'],['batal','↩️ Dibatalkan']];
   $('lgFilter').innerHTML = chip.map(function(c){
     return '<span class="pill'+(f===c[0]?' on':'')+'" onclick="setLogFilter(\''+c[0]+'\')">'+c[1]+'</span>';
   }).join('');
@@ -3518,6 +3539,120 @@ function renderAmbilLog(){
     ? ('· '+list.length+' dari '+state.ambil.length)
     : (state.ambil.length? '· '+state.ambil.length+' baris'+(list.length>60? ' (60 teratas)':'') : '');
   if($('lgMore')) $('lgMore').style.display = state.logPenuh? 'none' : '';
+}
+
+/* ---------- ringkasan riwayat satu barang ----------
+   Muncul kalau pencarian menyisakan SATU kode saja. Yang ditanyakan orang gudang
+   biasanya bukan "ada transaksi apa" tapi "barang ini keluar berapa, dari rak
+   mana, terakhir kapan" — jadi itu yang dihitungkan, bukan cuma daftar mentah. */
+function ringkasLogItem(list, toks){
+  var box = $('lgRingkas'); if(!box) return;
+  if(!toks.length && !state.logFilter){ box.innerHTML=''; return; }
+  var kode = {};
+  list.forEach(function(a){ if(a.kode) kode[a.kode]=1; });
+  var kodes = Object.keys(kode);
+  if(kodes.length!==1){ box.innerHTML=''; return; }
+
+  var k = kodes[0];
+  var sah = list.filter(function(a){ return String(a.status||'').toUpperCase()!=='BATAL'; });
+  var ambil = sah.filter(function(a){ return String(a.no||'')!=='PINDAH'; });
+  var pindah = sah.filter(function(a){ return String(a.no||'')==='PINDAH'; });
+  var batal = list.filter(function(a){ return String(a.status||'').toUpperCase()==='BATAL'; });
+  var totalKeluar = ambil.reduce(function(s,a){ return s+num(a.qty); }, 0);
+  var luar = ambil.filter(function(a){ return String(a.fifo||'').indexOf('LUAR')>=0; }).length;
+
+  // dari rak mana saja, dan berapa
+  var perRak = {};
+  ambil.forEach(function(a){
+    var m = String(a.koli||'').match(/·\s*RAK\s+(.+)$/i);
+    var r = m ? m[1].trim() : (String(a.koli||'').indexOf('DS-')===0 ? a.koli : 'tanpa rak');
+    perRak[r] = (perRak[r]||0) + num(a.qty);
+  });
+  var rakTeks = Object.keys(perRak).sort(function(a,b){ return perRak[b]-perRak[a]; })
+    .map(function(r){ return esc(r)+' <b>'+perRak[r]+'</b>'; }).join(' · ') || '—';
+
+  var terakhir = ambil[0] || sah[0] || list[0];
+  var stok = state.bn.filter(function(x){ return x.kode===k; });
+  var sisa = stok.reduce(function(s,x){ return s+num(x.sisa); }, 0);
+  var stokTeks = stok.length
+    ? stok.map(function(x){ return (x.rak? esc(x.rak):'belum dirak')+' <b>'+num(x.sisa)+'</b>'+
+        (x.lama? '' : ' <span class="muted">('+esc(dmy(x.tgl))+')</span>'); }).join(' · ')
+    : '<span class="muted">tidak ada di stok bulk</span>';
+
+  box.innerHTML = '<div class="card" style="margin:0 0 8px;background:var(--card2)">'+
+    '<div style="font-weight:800;font-size:14.5px">'+esc((list[0]&&list[0].nama)||k)+'</div>'+
+    '<div class="muted" style="margin-bottom:7px">'+esc(k)+
+      (state.logPenuh? ' • dari seluruh riwayat' : ' • dari '+state.ambil.length+' transaksi terakhir')+'</div>'+
+    '<div class="stat" style="margin-bottom:7px">'+
+      '<div><b>'+totalKeluar+'</b><s>total keluar</s></div>'+
+      '<div><b>'+ambil.length+'</b><s>kali diambil</s></div>'+
+      '<div><b>'+sisa+'</b><s>sisa sekarang</s></div></div>'+
+    '<div class="muted">📤 Diambil dari: '+rakTeks+'</div>'+
+    '<div class="muted">📦 Stok sekarang: '+stokTeks+'</div>'+
+    (terakhir? '<div class="muted">🕒 Terakhir: '+esc(terakhir.waktu || dmy(terakhir.tanggal))+
+      ' oleh '+esc(terakhir.pic||'-')+'</div>' : '')+
+    (pindah.length? '<div class="muted">↔️ '+pindah.length+' kali dipindah rak</div>' : '')+
+    (luar? '<div class="err">⚠️ '+luar+' pengambilan di luar urutan FIFO</div>' : '')+
+    (batal.length? '<div class="muted">↩️ '+batal.length+' transaksi dibatalkan (tidak dihitung di atas)</div>' : '')+
+  '</div>';
+}
+
+/* pintasan dari layar Gudang Bulk: lihat riwayat satu barang */
+function riwayatItem(kode){
+  state.modul='ambil';
+  show('ambil');
+  if($('lgQ')) $('lgQ').value = kode;
+  state.logFilter='';
+  renderAmbilLog();
+  setTimeout(function(){ window.scrollTo(0, 0); }, 60);
+}
+
+/* ---------- batalkan transaksi yang terlanjur discan ----------
+   Stok dikembalikan, dan baris log-nya DITANDAI batal — bukan dihapus. Kalau
+   dihapus, pembatalan justru jadi jalan untuk menghilangkan jejak. */
+function batalTransaksi(no){
+  var baris = (state.ambil||[]).filter(function(a){ return String(a.no)===String(no); });
+  if(!baris.length){ toast('Transaksi tidak ketemu'); return; }
+  var total = baris.reduce(function(s,a){ return s+num(a.qty); }, 0);
+  state.pendBatal = no;
+  $('detBox').innerHTML = '<div class="grab"></div>'+
+    '<h3>↩️ Batalkan '+esc(no)+'?</h3>'+
+    '<div class="muted">'+esc(baris[0].tanggal? dmy(baris[0].tanggal) : '')+
+      (baris[0].waktu? ' • '+esc(baris[0].waktu) : '')+' • oleh '+esc(baris[0].pic||'-')+'</div>'+
+    '<div class="card" style="margin:10px 0;border-color:#16a34a;background:#dcfce7;color:#166534">'+
+      '<b>Yang dikembalikan ke stok:</b><br>'+
+      baris.map(function(a){
+        return esc(a.nama||a.kode)+' — <b>'+num(a.qty)+'</b> dari '+esc(a.koli||'-');
+      }).join('<br>')+
+      (baris.length>1? '<br><br>Total '+total+' dalam '+baris.length+' baris.' : '')+'</div>'+
+    '<label class="lb">Kenapa dibatalkan?</label>'+
+    '<input type="text" id="batalAlasan" placeholder="mis. salah scan, barangnya batal dibawa" autocomplete="off">'+
+    '<div class="muted" style="margin-top:6px">Barisnya tetap ada di log book, ditandai <b>BATAL</b> — supaya jejaknya tidak hilang.</div>'+
+    '<div style="height:10px"></div>'+
+    '<button class="btn dgr" onclick="kirimBatal()">↩️ Ya, batalkan &amp; kembalikan stok</button>'+
+    '<div style="height:8px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tidak jadi</button>';
+  showEl('backDet');
+  setTimeout(function(){ var el=$('batalAlasan'); if(el) el.focus(); }, 80);
+}
+function kirimBatal(){
+  var no = state.pendBatal; if(!no) return;
+  var alasan = ($('batalAlasan') && $('batalAlasan').value.trim()) || '';
+  if(!alasan){ toast('Isi dulu alasannya', 2600); return; }
+  hide('backDet');
+  toast('Membatalkan '+no+'…', 8000);
+  // menunggu server: pembatalan mengubah stok, hasilnya harus terlihat pasti
+  postExec({action:'bulkbatal', no:no, pic:state.user, alasan:alasan, clientId:uuid()}, 1, 60000)
+    .then(function(o){
+      toast('✅ '+no+' dibatalkan · '+(o.kembali||[]).length+' baris dikembalikan', 3600);
+      return postExec({action:'batch', ops:[{action:'bulk'},{action:'logambil', all: state.logPenuh?1:0}]}, 2, 60000);
+    })
+    .then(function(r){
+      var h=(r&&r.hasil)||[];
+      if(h[0] && h[0].bulk) setBulkData(h[0].bulk);
+      if(h[1] && h[1].ambil) state.ambil = h[1].ambil.slice().reverse();
+      renderAmbilLog(); if(state.screen==='bulk') renderBulk();
+    })
+    .catch(function(e){ alert('Gagal membatalkan: '+e.message); });
 }
 
 function openScanKoli(){ openScan(true); }
@@ -4149,7 +4284,9 @@ function setKoliData(o){
     state.items[no].push({kode:r[1], nama:r[2], satuan:r[3], qty:num(r[4]),
                           diambil:num(r[5]), sisa:(r.length>6? num(r[6]) : num(r[4]))});
   });
-  if(o.ambil) state.ambil = o.ambil;
+  // server mengirim urut sheet (terlama dulu); app menampilkan terbaru di atas
+  // dan menyisipkan transaksi baru di depan → harus dibalik dulu
+  if(o.ambil) state.ambil = o.ambil.slice().reverse();
   if(o.bulk) setBulkData(o.bulk);
   if(o.rakDaftar && o.rakDaftar.length){
     state.rakDaftar = o.rakDaftar;
