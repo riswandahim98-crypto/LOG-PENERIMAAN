@@ -4286,16 +4286,19 @@ function duplicateKoli(no, senyap){
 
 /* ================= RIWAYAT ================= */
 function setKoliData(o){
-  // boot ringkas tidak membawa daftar koli — jangan mengosongkan yang sudah ada
-  if(!o.koli && !o.items) return;
-  state.koli = (o.koli||[]).slice().reverse();
-  state.items = {};
-  (o.items||[]).forEach(function(r){
-    var no=r[0]; if(!state.items[no]) state.items[no]=[];
-    // [no, kode, nama, satuan, qty, diambil, sisa]
-    state.items[no].push({kode:r[1], nama:r[2], satuan:r[3], qty:num(r[4]),
-                          diambil:num(r[5]), sisa:(r.length>6? num(r[6]) : num(r[4]))});
-  });
+  /* boot ringkas tidak membawa daftar koli. Yang DILEWATI hanya bagian koli —
+     jangan sekali-kali keluar dari fungsi ini lebih awal, karena log transaksi,
+     data bulk, dan daftar rak juga diambil dari sini. */
+  if(o.koli || o.items){
+    state.koli = (o.koli||[]).slice().reverse();
+    state.items = {};
+    (o.items||[]).forEach(function(r){
+      var no=r[0]; if(!state.items[no]) state.items[no]=[];
+      // [no, kode, nama, satuan, qty, diambil, sisa]
+      state.items[no].push({kode:r[1], nama:r[2], satuan:r[3], qty:num(r[4]),
+                            diambil:num(r[5]), sisa:(r.length>6? num(r[6]) : num(r[4]))});
+    });
+  }
   // server mengirim urut sheet (terlama dulu); app menampilkan terbaru di atas
   // dan menyisipkan transaksi baru di depan → harus dibalik dulu
   if(o.ambil) state.ambil = o.ambil.slice().reverse();
