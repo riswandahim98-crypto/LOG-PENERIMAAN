@@ -508,6 +508,16 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
       <button class="lnk" onclick="undoMR()">↩ Batal scan terakhir</button></h2>
     <div id="mList"></div>
   </div>
+  <!-- cari lokasi barang tanpa harus membuka rak satu per satu -->
+  <div class="card hide" id="mCariLok">
+    <div class="row">
+      <input type="search" id="mQL" placeholder="🔎 Barang ini ada di mana? ketik nama / kode / alamat…" autocomplete="off">
+      <button class="btn sec sm" onclick="openScan(false,'mrcari')" title="Scan barcode">📷</button>
+      <button class="btn sec sm" onclick="hapusCariLokMR()" title="Bersihkan">✕</button>
+    </div>
+    <div class="muted" id="mLokInfo" style="margin-top:5px"></div>
+  </div>
+  <div class="card hide" id="mHasil"></div>
   <div class="card hide" id="mGrid"></div>
 </div>
 <!-- ============ ISI SATU KOLI DEAD STOCK ============ -->
@@ -3835,6 +3845,19 @@ function bindSearch(){
      Jeda 400 ms hanya menahan scanner yang menembak dobel sendiri; scan manusia
      yang berturut-turut jaraknya jauh lebih panjang, jadi tidak ikut tertahan. */
   /* Master Rack V2 — scanner pistol: kode + Enter langsung terplot di alamat aktif */
+  /* cari lokasi barang di layar depan Master Rack V2 */
+  var tml=null;
+  $('mQL').addEventListener('input', function(){ clearTimeout(tml); tml=setTimeout(renderMR,110); });
+  $('mQL').addEventListener('keydown', function(e){
+    if(e.key==='Escape'){ hapusCariLokMR(); return; }
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    // scanner pistol: kode + Enter → kalau cuma ada 1 lokasi, langsung dibuka
+    var v = $('mQL').value.trim(); if(!v) return;
+    var hit = state.mr2.filter(function(x){ return normCode(x.kode)===normCode(v); });
+    if(hit.length===1) bukaAlamatMR(hit[0].alamat);
+    else renderMR();
+  });
   var tm=null;
   $('mQ').addEventListener('input', function(){ clearTimeout(tm); tm=setTimeout(mrCari,110); });
   $('mQ').addEventListener('keydown', function(e){
@@ -4699,9 +4722,11 @@ function renderMR(){
   renderMRIsi();
 }
 
-/* langkah 1 — pilih rak */
+/* langkah 1 — pilih rak (atau cari lokasi barang langsung) */
 function renderMRRak(){
-  hide('mCari'); hide('mListCard'); showEl('mGrid');
+  hide('mCari'); hide('mListCard'); showEl('mCariLok');
+  if(cariLokMR()){ hide('mGrid'); return; }   // sedang mencari → petak rak disingkirkan
+  hide('mHasil'); showEl('mGrid');
   var daftar = mrRakDaftar();
   var terisi = {};
   state.mr2.forEach(function(x){ terisi[String(x.alamat||'').toUpperCase()] = 1; });
@@ -4730,7 +4755,7 @@ function renderMRRak(){
 
 /* langkah 2 — pilih level */
 function renderMRLevel(){
-  hide('mCari'); hide('mListCard'); showEl('mGrid');
+  hide('mCari'); hide('mListCard'); hide('mCariLok'); hide('mHasil'); showEl('mGrid');
   var lvl = mrLevelDaftar();
   $('mHead').innerHTML = '<div class="row"><div style="flex:1;min-width:0">'+
       '<div style="font-weight:800;font-size:16px">Rak '+esc(state.mrRak)+'</div>'+
@@ -4744,6 +4769,67 @@ function renderMRLevel(){
     }).join('')+'</div>';
 }
 
+/* ---------- cari lokasi barang tanpa membuka rak satu per satu ----------
+   Dikelompokkan per BARANG, bukan per baris — yang ditanyakan orang gudang
+   "barang ini di mana", dan satu barang boleh ada di beberapa alamat. */
+function cariLokMR(){
+  var box = $('mHasil'), info = $('mLokInfo');
+  var v = String(($('mQL')&&$('mQL').value)||'').trim();
+  var alamatTerisi = {};
+  state.mr2.forEach(function(x){ alamatTerisi[x.alamat]=1; });
+  if(info) info.innerHTML = state.mr2.length
+    ? '<b>'+state.mr2.length+'</b> barang terdata di <b>'+Object.keys(alamatTerisi).length+'</b> alamat'+
+      (state.mr2Info&&state.mr2Info.waktu? ' · dibaca '+esc(state.mr2Info.waktu) : '')
+    : 'Belum ada barang yang terdata.';
+  if(!v){ if(box) box.classList.add('hide'); return false; }
+
+  var toks = norm(v).split(' ').filter(Boolean);
+  var cocok = function(s){
+    var t = norm(s);
+    for(var i=0;i<toks.length;i++) if(t.indexOf(toks[i])<0) return false;
+    return true;
+  };
+  var grup = {}, urut = [];
+  state.mr2.forEach(function(x){
+    if(!cocok(x.kode+' '+x.nama+' '+x.alamat+' '+x.rak+' '+(x.pic||''))) return;
+    if(!grup[x.kode]){ grup[x.kode] = {kode:x.kode, nama:x.nama, lokasi:[]}; urut.push(x.kode); }
+    grup[x.kode].lokasi.push(x);
+  });
+  showEl('mHasil');
+  if(!urut.length){
+    box.innerHTML = '<h2>🔎 Hasil</h2><div class="muted" style="padding:6px 2px">'+
+      'Tidak ada yang cocok dengan “'+esc(v)+'”. Barangnya mungkin belum didata lokasinya.</div>';
+    return true;
+  }
+  var totalLok = urut.reduce(function(s,k){ return s+grup[k].lokasi.length; },0);
+  box.innerHTML = '<h2>🔎 '+urut.length+' barang · '+totalLok+' lokasi</h2>'+
+    urut.slice(0,60).map(function(k){
+      var g = grup[k];
+      return '<div class="arow"><div class="g">'+
+        '<div class="n">'+hl(g.nama||g.kode, toks)+'</div>'+
+        '<div class="s">'+hl(g.kode, toks)+'</div>'+
+        '<div style="margin-top:4px">'+g.lokasi.map(function(x){
+          return '<span class="pill" onclick="bukaAlamatMR(\''+esc(x.alamat)+'\')">📍 '+esc(x.alamat)+'</span>';
+        }).join('')+'</div></div></div>';
+    }).join('')+
+    (urut.length>60? '<div class="muted" style="padding:6px 2px">…dan '+(urut.length-60)+' barang lagi, ketik lebih spesifik</div>':'');
+  return true;
+}
+function hapusCariLokMR(){
+  if($('mQL')) $('mQL').value='';
+  renderMR();
+  if($('mQL')) $('mQL').focus();
+}
+/* ketuk alamat di hasil pencarian → langsung buka isi alamat itu */
+function bukaAlamatMR(alamat){
+  var s = String(alamat||'');
+  var p = s.lastIndexOf('-');
+  if(p<1){ toast('Alamat tidak terbaca: '+s); return; }
+  state.mrRak = s.slice(0,p);
+  if($('mQL')) $('mQL').value='';
+  pilihLevelMR(s.slice(p+1));
+}
+
 function pilihRakMR(rak){ state.mrRak=rak; state.mrLevel=''; renderMR(); }
 function pilihLevelMR(L){
   state.mrLevel=L; state.mrUndo=[];
@@ -4755,7 +4841,7 @@ function pilihLevelMR(L){
 /* langkah 3 — isi alamatnya */
 function renderMRIsi(){
   var alamat = mrAlamat(), isi = mrIsi(alamat);
-  hide('mGrid'); showEl('mCari'); showEl('mListCard');
+  hide('mGrid'); hide('mCariLok'); hide('mHasil'); showEl('mCari'); showEl('mListCard');
   $('mHead').innerHTML = '<div class="row"><div style="flex:1;min-width:0">'+
       '<div style="font-weight:800;font-size:22px;letter-spacing:.5px">'+esc(alamat)+'</div>'+
       '<div class="muted">Rak '+esc(state.mrRak)+' · level '+esc(state.mrLevel)+' — barang yang discan masuk ke sini</div></div>'+
@@ -4865,6 +4951,16 @@ function openScan(modeKoli, target){
           state._last=txt; state._lastT=Date.now();
           if(!bm){ toast('Kode tidak ada di master: '+txt, 2600); return; }
           tambahMR(bm);
+          return;
+        }
+        if(state.scanTarget==='mrcari'){       // scan untuk MELIHAT lokasinya, bukan mendata
+          state._last=txt; state._lastT=Date.now();
+          closeScan();
+          var lok = state.mr2.filter(function(x){ return normCode(x.kode)===normCode(txt); });
+          if(lok.length===1){ bukaAlamatMR(lok[0].alamat); return; }
+          if($('mQL')) $('mQL').value = String(txt).trim();
+          renderMR();
+          if(!lok.length) toast('Barang ini belum terdata lokasinya', 3000);
           return;
         }
         if(state.scanTarget==='bin'){             // scan barcode item → buka barisnya di database BIN
