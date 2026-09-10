@@ -818,8 +818,12 @@ function num(v){ var n=Number(v); return isNaN(n)?0:n; }
 /* ================= BACKEND ================= */
 function postExec(payload, tries, timeoutMs){
   tries = tries||3;
-  // master/list/boot = payload besar → beri waktu lebih panjang
-  timeoutMs = timeoutMs || ((payload.action==='master'||payload.action==='list'||payload.action==='boot') ? 90000 : 25000);
+  /* Batas waktu dinaikkan dari 25 → 75 detik. Apps Script menjalankan permintaan
+     satu-satu; kalau beberapa PIC scan bersamaan, permintaan MENGANTRE. Terukur
+     saat tim sedang ramai: `ping` yang tidak menyentuh apa pun pun butuh 15 detik.
+     Dengan batas 25 detik, permintaan yang sebenarnya baik-baik saja ikut dibatalkan
+     → di layar terlihat seperti "tidak bisa scan / data tidak bisa dimuat". */
+  timeoutMs = timeoutMs || ((payload.action==='master'||payload.action==='list'||payload.action==='boot') ? 120000 : 75000);
   var attempt = function(n){
     var ctl = new AbortController();
     var to = setTimeout(function(){ ctl.abort(); }, timeoutMs);
@@ -837,7 +841,10 @@ function postExec(payload, tries, timeoutMs){
     }).catch(function(e){
       clearTimeout(to);
       if(e && e.ditolak) throw e;                       // ditolak server → jangan diulang
-    if(n<tries) return new Promise(function(res){ setTimeout(res, 700*n); }).then(function(){ return attempt(n+1); });
+      /* Jeda ulang diperpanjang (2 dtk, 6 dtk). Dulu 0,7 dtk — saat antrean server
+         sudah panjang, kiriman ulang yang cepat justru MENAMBAH antrean, jadi makin
+         macet. Beri waktu antreannya surut dulu. */
+      if(n<tries) return new Promise(function(res){ setTimeout(res, n===1? 2000 : 6000); }).then(function(){ return attempt(n+1); });
       throw e;
     });
   };
@@ -1018,9 +1025,13 @@ function petaDS(kunci, no){
 
 /* "Pemanasan": panggilan kosong ±1,5 dtk yang menyiapkan koneksi ke Apps Script
    saat PIC mulai mengetik, supaya simpanan sesudahnya tidak mulai dari nol. */
+/* Pemanasan koneksi. Sengaja dibuat JARANG dan mengalah: saat server sedang
+   antre, ping justru ikut merebut giliran dan tidak menghangatkan apa pun —
+   terukur pernah 15 detik untuk permintaan yang tidak menyentuh data sama sekali. */
 function hangatkan(){
   var t = Date.now();
-  if(t - state.hangatT < 25000) return;
+  if(t - state.hangatT < 180000) return;          // paling sering 3 menit sekali
+  if(state.antre && state.antre.length) return;   // masih ada yang mau dikirim → jangan ganggu
   state.hangatT = t;
   postExec({action:'ping'}, 1, 8000).catch(function(){});
 }
