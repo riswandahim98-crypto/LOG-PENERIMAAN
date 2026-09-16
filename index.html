@@ -507,6 +507,8 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     <div style="margin-top:8px" id="riQuick"></div>
     <label class="lb" style="margin-top:10px">Kendala</label>
     <div id="riKendala"></div>
+    <label class="lb" style="margin-top:10px">Catatan barang ini (opsional)</label>
+    <input type="text" id="riNote" placeholder="mis. bocor di bagian tutup, isi tinggal separuh" autocomplete="off">
     <div style="height:10px"></div>
     <button class="btn" onclick="returItemSimpan()">Tambahkan</button>
     <div style="height:8px"></div>
@@ -4221,6 +4223,7 @@ function returTanya(o){
   $('riQty').value = 1;
   $('riQuick').innerHTML = [1,2,3,5,10,12,24].map(function(n){
     return '<span class="pill" onclick="$(\'riQty\').value='+n+'">'+n+'</span>'; }).join('');
+  $('riNote').value = '';
   renderReturKendala();
   showEl('backRItem');
   setTimeout(function(){ var el=$('riQty'); if(el) el.select(); }, 80);
@@ -4244,14 +4247,17 @@ function returItemSimpan(){
   if(q<=0){ toast('Qty harus lebih dari 0'); return; }
   if(!state.rPendKendala){ toast('Pilih dulu kendalanya', 2600); return; }
   var d = rDraft();
+  var note = ($('riNote') ? $('riNote').value : '').trim();
   if(state.rPendEdit >= 0){
-    d.items[state.rPendEdit] = {kode:o.kode, nama:o.nama, satuan:o.satuan||'PCS', qty:q, kendala:state.rPendKendala};
+    d.items[state.rPendEdit] = {kode:o.kode, nama:o.nama, satuan:o.satuan||'PCS', qty:q, kendala:state.rPendKendala, catatan:note};
   } else {
-    // barang yang sama dengan kendala yang sama digabung; kendala beda = baris beda,
-    // karena justru pemisahan itu yang dipakai tim CS waktu menjawab toko
-    var ex = d.items.filter(function(x){ return x.kode===o.kode && x.kendala===state.rPendKendala; })[0];
+    /* barang yang sama dengan kendala yang sama digabung; kendala beda = baris beda,
+       karena justru pemisahan itu yang dipakai tim CS waktu menjawab toko.
+       CATATAN ikut jadi pembeda: kalau digabung, catatan yang satu pasti terbuang. */
+    var ex = d.items.filter(function(x){
+      return x.kode===o.kode && x.kendala===state.rPendKendala && String(x.catatan||'')===note; })[0];
     if(ex) ex.qty = num(ex.qty)+q;
-    else d.items.push({kode:o.kode, nama:o.nama, satuan:o.satuan||'PCS', qty:q, kendala:state.rPendKendala});
+    else d.items.push({kode:o.kode, nama:o.nama, satuan:o.satuan||'PCS', qty:q, kendala:state.rPendKendala, catatan:note});
   }
   hide('backRItem');
   $('rQ').value=''; $('rRes').innerHTML='';
@@ -4269,6 +4275,7 @@ function returEditItem(i){
   $('riQty').value = num(it.qty);
   $('riQuick').innerHTML = [1,2,3,5,10,12,24].map(function(n){
     return '<span class="pill" onclick="$(\'riQty\').value='+n+'">'+n+'</span>'; }).join('');
+  $('riNote').value = it.catatan || '';
   renderReturKendala();
   showEl('backRItem');
 }
@@ -4294,7 +4301,8 @@ function renderReturItems(){
     return '<div class="kcard">'+
       '<div class="b" onclick="returEditItem('+i+')"><div class="kno">'+esc(it.nama||it.kode)+
         '<span class="badge">'+num(it.qty)+' pcs</span></div>'+
-      '<div class="kmeta">'+esc(it.kode)+' • <b>'+esc(it.kendala)+'</b></div></div>'+
+      '<div class="kmeta">'+esc(it.kode)+' • <b>'+esc(it.kendala)+'</b>'+
+        (it.catatan? '<br>📝 '+esc(it.catatan) : '')+'</div></div>'+
       '<button class="qbtn" onclick="event.stopPropagation();returHapusItem('+i+')" title="Hapus">🗑️</button></div>';
   }).join('') || '<div class="muted" style="padding:8px 4px">Belum ada barang. Cari atau scan barcodenya di atas.</div>';
   returHitung();
@@ -4342,7 +4350,8 @@ function returSimpan(){
     action:'retursimpan', clientId:d.cid, attempt: (d.attempt = num(d.attempt)+1),
     tanggal:d.tanggal, ticket:d.ticket, toko:d.toko, catatan:d.catatan, pic:state.user,
     photos: d.photos.map(function(x){ return String(x).split('base64,')[1] || ''; }),
-    items: d.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan||'PCS', qty:num(it.qty), kendala:it.kendala}; })
+    items: d.items.map(function(it){ return {kode:it.kode, nama:it.nama, satuan:it.satuan||'PCS', qty:num(it.qty),
+                                             kendala:it.kendala, catatan:String(it.catatan||'')}; })
   };
   postExec(payload, 2, 120000).then(function(o){
     btn.disabled=false; btn.textContent='✅ Simpan retur';
@@ -4378,7 +4387,8 @@ function renderReturHist(){
     var its = returItemDari(r.no);
     var batal = String(r.status||'').toUpperCase()==='BATAL';
     var rincian = its.map(function(x){
-      return '<div class="kmeta" style="padding-left:2px">• '+esc(x.nama||x.kode)+' — <b>'+num(x.qty)+' pcs</b> · '+esc(x.kendala)+'</div>';
+      return '<div class="kmeta" style="padding-left:2px">• '+esc(x.nama||x.kode)+' — <b>'+num(x.qty)+' pcs</b> · '+esc(x.kendala)+
+        (x.catatan? '<br><span style="padding-left:10px">📝 '+esc(x.catatan)+'</span>' : '')+'</div>';
     }).join('');
     return '<div class="kcard" style="display:block'+(batal?';opacity:.55':'')+'">'+
       '<div class="kno">'+esc(r.toko)+
