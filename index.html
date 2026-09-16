@@ -4162,6 +4162,24 @@ function returBuka(){
   $('rCat').value = d.catatan || '';
   renderReturToko(); renderReturItems(); renderReturThumbs(); renderReturHist();
   if(!state.toko || !state.toko.length) loadRetur(false);
+  else segarkanDaftarRetur();
+}
+
+/* Daftar toko & kendala diambil ulang tiap layar ini dibuka. Permintaannya kecil
+   (hanya kedua daftar, tanpa riwayat retur), jadi toko atau kendala yang baru
+   ditambahkan di sheet langsung ikut — tim tidak perlu ingat tombol ↻ atau menutup
+   aplikasi. Gagal? diam saja: daftar yang lama tetap terpakai. */
+function segarkanDaftarRetur(){
+  postExec({action:'returtoko'}, 1, 45000).then(function(o){
+    if(!o || !o.ok) return;
+    if(o.toko && o.toko.length) state.toko = o.toko;
+    if(o.kendala && o.kendala.length) state.kendala = o.kendala;
+    if(o.noTicket) state.rNoTicket = o.noTicket;
+    if(state.screen==='retur'){
+      renderReturToko();
+      if(!$('backRItem').classList.contains('hide')) renderReturKendala();
+    }
+  }).catch(function(){});
 }
 
 function loadRetur(fresh){
