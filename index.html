@@ -805,6 +805,7 @@ var state = {
   rakDaftar:[],
   // modul 8 — master rack v2 (rak + level → alamat "1A-3")
   mr2:[], mr2Info:null, mrRak:'', mrLevel:'', mrUndo:[], mrMuat:false,
+  mrPend:null, mrRiwayat:[], mrRiwayatMuat:false, mrRwFilter:'7',   // pindah rak + riwayatnya
   // modul 7 — penerimaan retur dari toko
   retur:[], returItem:[], toko:[], kendala:[], rNoTicket:'NO TICKET',
   // modul 9 — barcode produk (barcode asli pabrik → barang)
@@ -3650,7 +3651,10 @@ function renderMRRak(){
       '<div><b>'+Object.keys(terisi).length+'</b><s>alamat terisi</s></div>'+
       '<div><b>'+daftar.length*mrLevelDaftar().length+'</b><s>alamat tersedia</s></div></div>'+
     '<div class="muted">Pilih rak → pilih level → scan barangnya. Alamatnya jadi seperti <b>1A-3</b>. '+
-    (state.mr2Info&&state.mr2Info.sheet? 'Tersimpan di tab <b>'+esc(state.mr2Info.sheet)+'</b> pada file master item.' : '')+'</div>';
+    (state.mr2Info&&state.mr2Info.sheet? 'Tersimpan di tab <b>'+esc(state.mr2Info.sheet)+'</b> pada file master item.' : '')+'</div>'+
+    '<div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap">'+
+      '<button class="btn sec sm" onclick="bukaRiwayatMR()">🕘 Riwayat pindah</button>'+
+      '<button class="btn sec sm" onclick="bukaGandaMR()">⚠️ Lokasi ganda ('+gandaMR().length+')</button></div>';
   var grup={}, urut=[];
   daftar.forEach(function(r){
     var g=(String(r).match(/^\d+/)||['?'])[0];
@@ -3796,6 +3800,22 @@ function tambahMR(o){
   var sudah = state.mr2.filter(function(x){ return x.kode===o.kode && x.alamat===alamat; })[0];
   $('mQ').value=''; $('mRes').innerHTML='';
   if(sudah){ toast(o.kode+' sudah ada di '+alamat); return; }
+  /* Sudah tercatat di rak LAIN → tanya dulu: dipindah, atau memang ada di dua tempat?
+     Dulu langsung ditambah sebagai lokasi kedua, sehingga lokasi lama menumpuk. */
+  var lain = state.mr2.filter(function(x){ return x.kode===o.kode && x.alamat!==alamat; });
+  if(lain.length){
+    // kamera MR2 sengaja tetap terbuka untuk scan beruntun — ditutup dulu supaya
+    // tembakan berikutnya tidak masuk selagi pertanyaan ini belum dijawab
+    if(state.scanner) closeScan();
+    state.mrPend = {o:o, lain:lain, alamat:alamat};
+    dialogPindahMR();
+    return;
+  }
+  tambahLokasiMR(o);
+}
+
+function tambahLokasiMR(o){
+  var alamat = mrAlamat();
   var baris = {kode:o.kode, nama:o.nama||'', rak:state.mrRak, level:state.mrLevel,
                alamat:alamat, pic:state.user, waktu:'', row:0};
   state.mr2.unshift(baris);
@@ -3809,6 +3829,166 @@ function tambahMR(o){
            state.mr2 = state.mr2.filter(function(x){ return x!==baris; });
            simpanMRLokal(); renderMR(); alert('Gagal menyimpan lokasi: '+e.message);
          }}, {tag:'mr-'+o.kode});
+}
+
+/* ---- pindah rak ---- */
+function dialogPindahMR(){
+  var p = state.mrPend; if(!p) return;
+  var h = '<div class="grab"></div><h3>Barang ini sudah tercatat di rak lain</h3>'+
+    '<div style="font-weight:800;margin-top:4px">'+esc(p.o.nama||p.o.kode)+'</div>'+
+    '<div class="muted">'+esc(p.o.kode)+'</div>'+
+    '<div style="margin:9px 0 3px">Sekarang tercatat di:</div>'+
+    p.lain.map(function(x){
+      return '<div class="muted">📍 <b>'+esc(x.alamat)+'</b>'+(x.pic? ' · '+esc(x.pic) : '')+(x.waktu? ' · '+esc(x.waktu) : '')+'</div>';
+    }).join('')+
+    '<div style="height:12px"></div>';
+  // Pindah = tombol utama & tujuan Enter (keputusan user 21/09/2026): waktu merapikan rak,
+  // kasus yang paling sering memang barang dipindah — dan tiap pindah tercatat di riwayat
+  p.lain.forEach(function(x, i){
+    h += '<button class="btn'+(i? ' sec' : '')+'"'+(i? '' : ' id="btnMRPindah"')+' onclick="pindahMR('+i+')">'+
+         '↔️ Pindah dari '+esc(x.alamat)+' ke '+esc(p.alamat)+'</button><div style="height:8px"></div>';
+  });
+  h += '<button class="btn sec" onclick="tambahLokasiDariDialogMR()">➕ Tambah lokasi — barangnya memang ada di dua tempat</button>'+
+       '<div style="height:8px"></div><button class="btn sec" onclick="batalPindahMR()">Batal</button>';
+  $('detBox').innerHTML = h;
+  showEl('backDet');
+  // jeda supaya Enter dari scanner pistol tadi tidak langsung terhitung sebagai jawaban
+  setTimeout(function(){ var b=$('btnMRPindah'); if(b) b.focus(); }, 350);
+}
+function batalPindahMR(){
+  state.mrPend = null; hide('backDet');
+  setTimeout(function(){ var el=$('mQ'); if(el) el.focus(); }, 60);
+}
+function tambahLokasiDariDialogMR(){
+  var p = state.mrPend; state.mrPend = null; hide('backDet');
+  if(p) tambahLokasiMR(p.o);
+  setTimeout(function(){ var el=$('mQ'); if(el) el.focus(); }, 60);
+}
+function waktuSekarang(){
+  var d = new Date();
+  return todayStr()+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+function pindahMR(i){
+  var p = state.mrPend; if(!p) return;
+  state.mrPend = null; hide('backDet');
+  var asal = p.lain[i||0] || p.lain[0];
+  var ke = p.alamat;
+  var lama = {rak:asal.rak, level:asal.level, alamat:asal.alamat, pic:asal.pic, waktu:asal.waktu};
+  asal.rak = state.mrRak; asal.level = state.mrLevel; asal.alamat = ke; asal.pic = state.user; asal.waktu = '';
+  state.mr2 = [asal].concat(state.mr2.filter(function(x){ return x!==asal; }));
+  var catat = {waktu:'', kode:asal.kode, nama:asal.nama, dari:lama.alamat, ke:ke, pic:state.user};
+  state.mrRiwayat.unshift(catat);
+  simpanMRLokal(); renderMR();
+  toast('↔️ '+asal.kode+' dipindah '+lama.alamat+' → '+ke, 2800);
+  setTimeout(function(){ var el=$('mQ'); if(el) el.focus(); }, 60);
+  antre({action:'mr2pindah', kode:asal.kode, nama:asal.nama, dari:lama.alamat, rak:state.mrRak, level:state.mrLevel,
+         pic:state.user,
+         __lanjut:function(){
+           asal.waktu = waktuSekarang(); catat.waktu = asal.waktu;
+           simpanMRLokal();
+           if(state.screen==='mr2') renderMR();
+         },
+         __gagal:function(e){
+           asal.rak=lama.rak; asal.level=lama.level; asal.alamat=lama.alamat; asal.pic=lama.pic; asal.waktu=lama.waktu;
+           state.mrRiwayat = state.mrRiwayat.filter(function(x){ return x!==catat; });
+           simpanMRLokal(); renderMR();
+           alert('Gagal memindah '+asal.kode+': '+e.message+'\n\nLokasinya sudah dikembalikan ke '+lama.alamat+'.');
+         }}, {tag:'mr-'+asal.kode});
+}
+
+/* ---- riwayat pindah (juga tercatat di tab RIWAYAT PINDAH RAK di file master item) ---- */
+function bukaRiwayatMR(){
+  $('detBox').innerHTML = '<div class="grab"></div><h3>🕘 Riwayat pindah rak</h3>'+
+    '<input type="search" id="mrwQ" placeholder="🔎 Barang / kode / rak (mis. 1A) / PIC…" autocomplete="off" oninput="renderRiwayatMR()">'+
+    '<div id="mrwF" style="margin-top:7px"></div><div id="mrwList" style="margin-top:6px"></div>'+
+    '<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+  showEl('backDet');
+  renderRiwayatMR();
+  muatRiwayatMR();
+}
+function muatRiwayatMR(){
+  if(!state.mrRiwayatMuat && $('mrwList'))
+    $('mrwList').innerHTML = '<div class="muted" style="padding:8px 2px">Memuat riwayat…</div>';
+  postExec({action:'mr2riwayat'}, 2, 60000).then(function(o){
+    if(!o.ok) throw new Error(o.error||'gagal');
+    // server: terlama dulu → yang terbaru ditaruh di atas. Pindahan yang belum
+    // dikonfirmasi server (waktunya masih kosong) tetap dipertahankan di atasnya.
+    var dariServer = ((o.riwayat&&o.riwayat.rows)||[]).slice().reverse().map(function(r){
+      return {waktu:r[0], kode:r[1], nama:r[2], dari:r[3], ke:r[4], pic:r[5]};
+    });
+    var belum = state.mrRiwayat.filter(function(x){ return !x.waktu; });
+    state.mrRiwayat = belum.concat(dariServer);
+    state.mrRiwayatMuat = true;
+    renderRiwayatMR();
+  }).catch(function(e){
+    if($('mrwList') && !state.mrRiwayat.length) $('mrwList').innerHTML = '<span class="err">Gagal memuat: '+esc(e.message)+'</span>';
+  });
+}
+function setFilterRiwayatMR(f){ state.mrRwFilter = f; renderRiwayatMR(); }
+function renderRiwayatMR(){
+  var box = $('mrwList'); if(!box) return;
+  var f = state.mrRwFilter || '7', batas = '';
+  if(f!=='semua'){
+    var d = new Date(); d.setDate(d.getDate() - (f==='hari'? 0 : 6));
+    batas = d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+  }
+  $('mrwF').innerHTML = [['hari','Hari ini'],['7','7 hari'],['semua','Semua']].map(function(p){
+    return '<span class="pill'+(f===p[0]?' on':'')+'" onclick="setFilterRiwayatMR(\''+p[0]+'\')">'+p[1]+'</span>';
+  }).join('');
+  var q = norm(($('mrwQ')&&$('mrwQ').value)||''), toks = q? q.split(' ').filter(Boolean) : [];
+  var list = state.mrRiwayat.filter(function(x){
+    if(batas && x.waktu && String(x.waktu).slice(0,10) < batas) return false;
+    if(!toks.length) return true;
+    var t = norm([x.kode, x.nama, x.dari, x.ke, x.pic, x.waktu].join(' '));
+    for(var i=0;i<toks.length;i++) if(t.indexOf(toks[i])<0) return false;
+    return true;
+  });
+  box.innerHTML = list.slice(0,150).map(function(x){
+    return '<div class="arow"><div class="g"><div class="n">'+hl(x.nama||x.kode, toks)+'</div>'+
+      '<div class="s">'+hl(x.kode, toks)+' • <b>'+hl(x.dari, toks)+' → '+hl(x.ke, toks)+'</b>'+
+      (x.pic? ' • 👤 '+esc(x.pic) : '')+' • '+(x.waktu? esc(x.waktu) : 'menyimpan…')+'</div></div></div>';
+  }).join('') + (list.length>150? '<div class="muted" style="padding:6px 2px">…dan '+(list.length-150)+' lagi — ketik untuk menyaring</div>' : '')
+  || '<div class="muted" style="padding:8px 2px">'+(state.mrRiwayatMuat || state.mrRiwayat.length
+      ? 'Tidak ada perpindahan '+(f==='hari'? 'hari ini' : f==='7'? 'dalam 7 hari terakhir' : '')+(toks.length? ' yang cocok' : '')+'.'
+      : 'Memuat riwayat…')+'</div>';
+}
+
+/* ---- lokasi ganda: barang yang tercatat di lebih dari satu alamat ----
+   Isinya sisa sebelum ada fitur pindah, ATAU memang barangnya tersebar. Diurutkan
+   dari yang lokasinya paling lama tidak disentuh — itu yang paling mungkin basi. */
+function gandaMR(){
+  var grup = {}, urut = [];
+  state.mr2.forEach(function(x){
+    if(!grup[x.kode]){ grup[x.kode] = []; urut.push(x.kode); }
+    grup[x.kode].push(x);
+  });
+  return urut.filter(function(k){ return grup[k].length > 1; }).map(function(k){
+    // waktu kosong = baru disimpan, dianggap paling baru
+    var lok = grup[k].slice().sort(function(a,b){ var wa=a.waktu||'9', wb=b.waktu||'9'; return wa<wb? -1 : wa>wb? 1 : 0; });
+    return {kode:k, nama:lok[0].nama, lokasi:lok, tertua:lok[0].waktu||'9'};
+  }).sort(function(a,b){ return a.tertua<b.tertua? -1 : a.tertua>b.tertua? 1 : 0; });
+}
+function bukaGandaMR(){
+  var g = gandaMR();
+  $('detBox').innerHTML = '<div class="grab"></div><h3>⚠️ Lokasi ganda · '+g.length+' barang</h3>'+
+    '<div class="muted" style="margin-bottom:8px">Barang yang tercatat di lebih dari satu alamat. Cek fisiknya, lalu hapus lokasi yang sudah tidak benar. '+
+    'Lokasi paling atas di tiap barang = yang paling lama tidak disentuh.</div>'+
+    (g.length ? g.slice(0,120).map(function(x){
+      return '<div class="arow" style="display:block"><div class="n">'+esc(x.nama||x.kode)+'</div>'+
+        '<div class="s">'+esc(x.kode)+'</div>'+
+        x.lokasi.map(function(l){
+          return '<div class="row" style="align-items:center;margin-top:4px">'+
+            '<span class="pill" style="margin:0" onclick="hide(\'backDet\');bukaAlamatMR(\''+esc(l.alamat)+'\')">📍 '+esc(l.alamat)+'</span>'+
+            '<span class="muted" style="flex:1;min-width:0;margin-left:6px">'+(l.pic? esc(l.pic) : '')+(l.waktu? ' · '+esc(l.waktu) : ' · menyimpan…')+'</span>'+
+            '<button class="qbtn" onclick="hapusGandaMR(\''+esc(x.kode)+'\',\''+esc(l.alamat)+'\')" title="Hapus lokasi ini">🗑️</button></div>';
+        }).join('')+'</div>';
+    }).join('') : '<div class="muted" style="padding:8px 2px">Tidak ada — tiap barang tercatat di satu alamat saja.</div>')+
+    '<div style="height:10px"></div><button class="btn sec" onclick="hide(\'backDet\')">Tutup</button>';
+  showEl('backDet');
+}
+function hapusGandaMR(kode, alamat){
+  hapusMR(kode, alamat);
+  if(!$('backDet').classList.contains('hide')) bukaGandaMR();
 }
 
 function undoMR(){
