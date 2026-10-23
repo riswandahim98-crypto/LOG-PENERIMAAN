@@ -433,12 +433,13 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     </div>
     <input type="search" id="pHQ" placeholder="🔎 Cari barcode / nama / kode…" autocomplete="off" style="margin-top:7px">
     <div id="pHistFilter" style="margin-top:7px"></div>
+    <div id="pHistAksi" style="margin-top:7px"></div>
     <div id="pHist"></div>
   </div>
 </div>
 
-<!-- konfirmasi "yakin simpan?" -->
-<div class="back hide" id="backBP" onclick="if(event.target===this)bpBatal()">
+<!-- konfirmasi "yakin simpan?" + penandaan kemasan -->
+<div class="back hide" id="backBP" onclick="if(event.target===this)bpTutupDialog()">
   <div class="sheet" id="bpBox"></div>
 </div>
 
@@ -4033,10 +4034,11 @@ function loadBP(){
     renderBP();
   }).catch(function(e){ toast('Gagal memuat Barcode Produk: '+e.message, 3400); });
 }
-/* baris: [barcode, kode, nama, satuan, pic, waktu, row] */
+/* baris: [barcode, kode, nama, satuan, pic, waktu, row, ganda, kemasan, isi] */
 function setBPRows(rows, info, dariLokal){
   state.bp = rows.map(function(r){
-    return {barcode:bpNorm(r[0]), kode:r[1]||'', nama:r[2]||'', satuan:r[3]||'', pic:r[4]||'', waktu:r[5]||'', row:r[6]||0};
+    return {barcode:bpNorm(r[0]), kode:r[1]||'', nama:r[2]||'', satuan:r[3]||'', pic:r[4]||'', waktu:r[5]||'', row:r[6]||0,
+            kemasan:r[8]||'', isi:r[9]||''};
   });
   state.bpInfo = info;
   bpIndeks();
@@ -4045,7 +4047,7 @@ function setBPRows(rows, info, dariLokal){
 function simpanBPLokal(){
   try{
     localStorage.setItem(LS.bp, JSON.stringify({info:state.bpInfo,
-      rows:state.bp.map(function(x){ return [x.barcode,x.kode,x.nama,x.satuan,x.pic,x.waktu,x.row]; })}));
+      rows:state.bp.map(function(x){ return [x.barcode,x.kode,x.nama,x.satuan,x.pic,x.waktu,x.row,'',x.kemasan||'',x.isi||'']; })}));
   }catch(e){}
 }
 function bpMilik(kode){ return state.bp.filter(function(x){ return x.kode===kode; }); }
@@ -4083,6 +4085,8 @@ function bpGanti(){
 
 var BP_PERINGATAN = 'background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.35);border-radius:10px;padding:9px 10px;margin-top:10px;font-size:13px;line-height:1.45';
 function bpBatal(){ state.bpPending = null; hide('backBP'); bpFokus(); }
+// satu kotak dialog dipakai dua keperluan (simpan barcode & tandai kemasan) — tutupnya satu pintu
+function bpTutupDialog(){ if(state.bpUbah) bpUbahBatal(); else bpBatal(); }
 
 /* barcode → SEMUA baris pemiliknya. Satu barcode bisa dipakai beberapa barang (barcode
    ganda, mis. beberapa rasa satu seri — kasus nyata 14/09/2026), jadi isinya daftar. */
@@ -4137,13 +4141,41 @@ function bpTerima(raw){
   if(!bar){ toast('Scan barcode di kemasan produknya'); bpFokus(); return; }
   if(bar.length < 6){ toast('Barcode terlalu pendek ('+bar.length+' karakter) — scan ulang', 3000); bpFokus(); return; }
   var pemilik = bpPemilik(bar);
-  if(pemilik.some(function(x){ return x.kode===it.kode; })){
-    // scan ulang barang yang sama → bukan data baru
-    toast('Sudah terdata — '+bar+' memang milik barang ini', 2800); bpFokus(); return;
+  var sendiri = pemilik.filter(function(x){ return x.kode===it.kode; })[0];
+  if(sendiri){
+    // scan ulang barang yang sama → bukan data baru. Kemasannya masih bisa dibetulkan/dilengkapi.
+    toast('Sudah terdata — '+bar+' memang milik barang ini'+
+          (sendiri.kemasan? ' ('+bpKemasanTeks(sendiri)+')' : ''), 3000);
+    bpFokus(); return;
   }
   // yang discan ternyata label kode barang, bukan barcode pabrik
   var internal = state.byKode[normCode(bar)] || state.byBar[normCode(bar)] || null;
-  state.bpPending = {barcode:bar, item:it, lain:pemilik.slice(), internal:internal};
+  state.bpPending = {barcode:bar, item:it, lain:pemilik.slice(), internal:internal,
+                     kemasan:'PACK', isi:''};
+  bpDialog();
+}
+
+/* Keterangan kemasan satu baris. Kosong = baris lama yang belum ditentukan; dibaca sebagai
+   satuan jual 1 pcs, jadi tidak perlu discan ulang. */
+function bpKemasanTeks(x){
+  if(x.kemasan==='BOX') return x.isi? ('BOX · '+x.isi+' pcs') : 'BOX · isi belum diisi';
+  if(x.kemasan==='PACK') return 'PACK · 1 pcs';
+  return '';
+}
+function bpLencanaKemasan(x){
+  if(x.kemasan==='BOX'){
+    var kurang = !x.isi;
+    return ' <span class="badge" style="background:'+(kurang?'rgba(220,38,38,.14);color:#b91c1c':'rgba(37,99,235,.14);color:#1d4ed8')+'">'+
+      esc(bpKemasanTeks(x))+'</span>';
+  }
+  if(x.kemasan==='PACK') return ' <span class="badge" style="background:rgba(22,163,74,.14);color:#15803d">PACK</span>';
+  return '';
+}
+/* pilihan kemasan di dialog; isi yang sudah diketik dipertahankan saat berganti pilihan */
+function bpPilihKemasan(k){
+  var p = state.bpPending; if(!p) return;
+  var el = $('bpIsi'); if(el) p.isi = el.value;
+  p.kemasan = k;
   bpDialog();
 }
 
@@ -4165,6 +4197,28 @@ function bpDialog(){
     h += '<div style="'+BP_PERINGATAN+'">⚠️ Yang discan terbaca sebagai <b>kode barang '+esc(p.internal.kode)+'</b>'+
          (p.internal.nama? ' ('+esc(p.internal.nama)+')' : '')+', bukan barcode pabrik. Pastikan yang discan barcode di <b>kemasan produk</b>.</div>';
   }
+  /* Pilihan kemasan: sebagian barang (cartridge & CT) punya barcode box DAN barcode pack
+     dalamnya. Tanpa keterangan ini, scan box nanti terhitung 1 pcs padahal isinya belasan. */
+  var sudah = bpMilik(p.item.kode);
+  h += '<div style="height:10px"></div><div class="muted">Yang discan ini kemasan apa?</div>'+
+    '<div style="display:flex;gap:8px;margin:6px 0 2px">'+
+    ['PACK','BOX'].map(function(k){
+      var on = p.kemasan===k;
+      return '<button type="button" onclick="bpPilihKemasan(\''+k+'\')" style="flex:1;padding:10px 6px;border-radius:10px;cursor:pointer;'+
+        'font-weight:800;font-size:14px;border:1.5px solid '+(on?'var(--ok,#16a34a)':'var(--line)')+';'+
+        'background:'+(on?'rgba(22,163,74,.12)':'transparent')+'">'+
+        (k==='PACK'? 'PACK<br><s style="font-weight:600;font-size:11px;opacity:.75">satuan terkecil · 1 pcs</s>'
+                   : 'BOX<br><s style="font-weight:600;font-size:11px;opacity:.75">kemasan luar · banyak pcs</s>')+'</button>';
+    }).join('')+'</div>';
+  if(p.kemasan==='BOX'){
+    h += '<input id="bpIsi" type="number" inputmode="numeric" min="2" step="1" value="'+esc(p.isi||'')+'" '+
+         'placeholder="1 box isi berapa pcs?" style="width:100%;margin-top:8px">'+
+         '<div class="muted" style="margin-top:4px;font-size:12px">Boleh dikosongkan kalau belum tahu — barcodenya tetap tersimpan, isinya dilengkapi nanti lewat tombol kemasan di daftar.</div>';
+  }
+  if(sudah.length){
+    h += '<div class="muted" style="margin-top:8px;font-size:12px">Barang ini sudah punya '+sudah.length+' barcode: '+
+      sudah.map(function(x){ return esc(x.barcode)+(bpKemasanTeks(x)? ' ('+esc(bpKemasanTeks(x))+')' : ''); }).join(', ')+'</div>';
+  }
   h += '<div style="height:12px"></div>';
   if(p.lain.length){
     // Dipakai bersama sengaja jadi tombol utama & tujuan Enter: tidak menghapus apa pun,
@@ -4180,22 +4234,34 @@ function bpDialog(){
   $('bpBox').innerHTML = h;
   showEl('backBP');
   // scanner pistol: Enter di dialog = tombol utama. Diberi jeda supaya Enter dari scan tadi tidak ikut terhitung.
-  setTimeout(function(){ var b=$('btnBPSimpan'); if(b) b.focus(); }, 350);
+  setTimeout(function(){
+    // BOX dipilih → kursor langsung ke kolom isi, biar tidak perlu tap sekali lagi
+    var i = $('bpIsi');
+    if(i){ i.focus(); i.onkeydown = function(e){ if(e.key==='Enter'){ e.preventDefault(); var b=$('btnBPSimpan'); if(b) b.click(); } }; return; }
+    var b = $('btnBPSimpan'); if(b) b.focus();
+  }, 350);
 }
 
 function bpSimpan(mode, iDari){
   var p = state.bpPending; if(!p) return;
+  var el = $('bpIsi'); if(el) p.isi = el.value;
+  var kemasan = p.kemasan==='BOX' ? 'BOX' : 'PACK';
+  var isi = kemasan==='BOX' ? (parseInt(p.isi,10)||'') : 1;
+  if(kemasan==='BOX' && isi===1){ toast('BOX isi 1 pcs sama saja dengan PACK — pilih PACK, atau isi jumlah pcs yang betul', 3600); return; }
   mode = !p.lain.length ? '' : (mode==='pindah' ? 'pindah' : 'bersama');
   state.bpPending = null; hide('backBP');
   var baris, lama = null, dari = '';
   if(mode==='pindah'){
     baris = p.lain[iDari||0] || p.lain[0];
     dari = baris.kode;
-    lama = {kode:baris.kode, nama:baris.nama, satuan:baris.satuan, pic:baris.pic, waktu:baris.waktu};
+    lama = {kode:baris.kode, nama:baris.nama, satuan:baris.satuan, pic:baris.pic, waktu:baris.waktu,
+            kemasan:baris.kemasan, isi:baris.isi};
     baris.kode = p.item.kode; baris.nama = p.item.nama; baris.satuan = p.item.satuan; baris.pic = state.user; baris.waktu = '';
+    baris.kemasan = kemasan; baris.isi = isi;
     state.bp = [baris].concat(state.bp.filter(function(x){ return x!==baris; }));
   } else {
-    baris = {barcode:p.barcode, kode:p.item.kode, nama:p.item.nama, satuan:p.item.satuan, pic:state.user, waktu:'', row:0};
+    baris = {barcode:p.barcode, kode:p.item.kode, nama:p.item.nama, satuan:p.item.satuan, pic:state.user, waktu:'', row:0,
+             kemasan:kemasan, isi:isi};
     state.bp.unshift(baris);
   }
   bpIndeks(); simpanBPLokal();
@@ -4204,9 +4270,10 @@ function bpSimpan(mode, iDari){
   renderBP(); bpFokus();
   toast(mode==='bersama'
     ? ('➕ '+p.barcode+' dipakai bersama · sekarang '+bpPemilik(p.barcode).length+' barang')
-    : ('✅ '+p.barcode+' → '+(p.item.nama||p.item.kode)), 2800);
+    : ('✅ '+p.barcode+' → '+(p.item.nama||p.item.kode)+' · '+bpKemasanTeks(baris)), 2800);
   antre({action:'bpsimpan', barcode:p.barcode, kode:p.item.kode, nama:p.item.nama, satuan:p.item.satuan,
          pic:state.user, mode:mode, dari:dari, pindah: mode==='pindah'? '1' : '',
+         kemasan:kemasan, isi:isi,
          // tanpa ini barisnya bertuliskan "menyimpan…" terus sampai app dimuat ulang
          __lanjut:function(o){
            var d = new Date();
@@ -4216,7 +4283,8 @@ function bpSimpan(mode, iDari){
            if(state.screen==='bp') renderBP();
          },
          __gagal:function(e){
-           if(lama){ baris.kode=lama.kode; baris.nama=lama.nama; baris.satuan=lama.satuan; baris.pic=lama.pic; baris.waktu=lama.waktu; }
+           if(lama){ baris.kode=lama.kode; baris.nama=lama.nama; baris.satuan=lama.satuan; baris.pic=lama.pic; baris.waktu=lama.waktu;
+                     baris.kemasan=lama.kemasan; baris.isi=lama.isi; }
            else state.bp = state.bp.filter(function(x){ return x!==baris; });
            bpIndeks(); simpanBPLokal(); renderBP();
            alert('Barcode '+p.barcode+' GAGAL tersimpan: '+e.message+'\n\nData di layar sudah dikembalikan.');
@@ -4258,10 +4326,10 @@ function renderBP(){
     $('pMilik').innerHTML = milik.length ? milik.map(function(x){
       var lain = x.ganda ? bpPemilik(x.barcode).filter(function(y){ return y.kode!==it.kode; }) : [];
       return '<div class="kcard"><div class="b">'+
-        '<div class="kno"><span style="font-family:ui-monospace,Consolas,monospace">'+esc(x.barcode)+'</span>'+bpLencanaGanda(x)+'</div>'+
+        '<div class="kno"><span style="font-family:ui-monospace,Consolas,monospace">'+esc(x.barcode)+'</span>'+bpLencanaGanda(x)+bpLencanaKemasan(x)+'</div>'+
         '<div class="kmeta">'+(x.pic? esc(x.pic) : '')+(x.waktu? ' • '+esc(x.waktu) : ' • menyimpan…')+
           (lain.length? '<br>juga dipakai: '+lain.map(function(y){ return esc(y.nama||y.kode); }).join(', ') : '')+'</div></div>'+
-        bpTombolHapus(x)+'</div>';
+        bpTombolKemasan(x)+bpTombolHapus(x)+'</div>';
     }).join('') : '<div class="muted" style="padding:4px 2px">Belum ada.</div>';
   }
   var sku = {}, ganda = {};
@@ -4275,32 +4343,130 @@ function renderBP(){
   renderBPHist();
 }
 function setBPFilter(f){ state.bpFilter = f; renderBPHist(); }
-function renderBPHist(){
-  var box = $('pHist'); if(!box) return;
+/* Daftar riwayat sesudah disaring — dipakai tampilan DAN penandaan massal, supaya yang
+   ditandai persis yang sedang kelihatan di layar. */
+function bpHasilSaring(){
   var q = norm(($('pHQ')&&$('pHQ').value)||''), toks = q? q.split(' ').filter(Boolean) : [];
-  var nGanda = 0, lihat = {};
-  state.bp.forEach(function(x){ if(x.ganda && !lihat[x.barcode]){ lihat[x.barcode]=1; nGanda++; } });
-  if($('pHistFilter')) $('pHistFilter').innerHTML =
-    '<span class="pill'+(!state.bpFilter?' on':'')+'" onclick="setBPFilter(\'\')">Semua</span>'+
-    '<span class="pill'+(state.bpFilter==='ganda'?' on':'')+'" onclick="setBPFilter(\'ganda\')">⚠️ Barcode ganda ('+nGanda+')</span>';
   var list = state.bp.filter(function(x){
     if(state.bpFilter==='ganda' && !x.ganda) return false;
+    if(state.bpFilter==='boxkosong' && !(x.kemasan==='BOX' && !x.isi)) return false;
     if(!toks.length) return true;
-    var t = norm([x.barcode, x.kode, x.nama, x.pic, x.ganda? 'ganda' : ''].join(' '));
+    var t = norm([x.barcode, x.kode, x.nama, x.pic, x.ganda? 'ganda' : '', x.kemasan||''].join(' '));
     for(var i=0;i<toks.length;i++) if(t.indexOf(toks[i])<0) return false;
     return true;
   });
   // saat menyaring barcode ganda, pemilik satu barcode dikumpulkan berdampingan supaya mudah diperiksa
   if(state.bpFilter==='ganda') list = list.slice().sort(function(a,b){ return a.barcode<b.barcode? -1 : a.barcode>b.barcode? 1 : 0; });
-  $('pHistN').textContent = state.bp.length ? ((toks.length||state.bpFilter)? list.length+' dari '+state.bp.length : state.bp.length+' baris') : '';
+  return list;
+}
+function renderBPHist(){
+  var box = $('pHist'); if(!box) return;
+  var disaring = !!(norm(($('pHQ')&&$('pHQ').value)||'') || state.bpFilter);
+  var nGanda = 0, lihat = {}, nBoxKosong = 0;
+  state.bp.forEach(function(x){
+    if(x.ganda && !lihat[x.barcode]){ lihat[x.barcode]=1; nGanda++; }
+    if(x.kemasan==='BOX' && !x.isi) nBoxKosong++;
+  });
+  if($('pHistFilter')) $('pHistFilter').innerHTML =
+    '<span class="pill'+(!state.bpFilter?' on':'')+'" onclick="setBPFilter(\'\')">Semua</span>'+
+    '<span class="pill'+(state.bpFilter==='ganda'?' on':'')+'" onclick="setBPFilter(\'ganda\')">⚠️ Barcode ganda ('+nGanda+')</span>'+
+    '<span class="pill'+(state.bpFilter==='boxkosong'?' on':'')+'" onclick="setBPFilter(\'boxkosong\')">📦 BOX tanpa isi ('+nBoxKosong+')</span>';
+  var list = bpHasilSaring();
+  $('pHistN').textContent = state.bp.length ? (disaring? list.length+' dari '+state.bp.length : state.bp.length+' baris') : '';
+  // penandaan massal hanya muncul saat daftarnya sudah disaring — supaya tidak ada yang
+  // menandai seluruh data dengan satu tap
+  if($('pHistAksi')) $('pHistAksi').innerHTML = (disaring && list.length)
+    ? '<button class="btn sec" onclick="bpTandaiMassal()">🏷️ Tandai kemasan '+list.length+' baris ini</button>' : '';
   box.innerHTML = list.slice(0,80).map(function(x){
     return '<div class="kcard"><div class="b">'+
-      '<div class="kno">'+esc(x.nama||x.kode)+bpLencanaGanda(x)+'</div>'+
+      '<div class="kno">'+esc(x.nama||x.kode)+bpLencanaGanda(x)+bpLencanaKemasan(x)+'</div>'+
       '<div class="kmeta"><b style="font-family:ui-monospace,Consolas,monospace">'+esc(x.barcode)+'</b> • '+esc(x.kode)+
         (x.pic? ' • '+esc(x.pic) : '')+(x.waktu? ' • '+esc(x.waktu) : ' • menyimpan…')+'</div></div>'+
-      bpTombolHapus(x)+'</div>';
+      bpTombolKemasan(x)+bpTombolHapus(x)+'</div>';
   }).join('') + (list.length>80? '<div class="muted" style="padding:7px 4px">+'+(list.length-80)+' lainnya — ketik untuk menyaring.</div>' : '')
-  || '<div class="muted" style="padding:8px 4px">'+((toks.length||state.bpFilter)? 'Tidak ada yang cocok.' : 'Belum ada barcode yang terdata.')+'</div>';
+  || '<div class="muted" style="padding:8px 4px">'+(disaring? 'Tidak ada yang cocok.' : 'Belum ada barcode yang terdata.')+'</div>';
+}
+
+/* ---- menandai kemasan baris yang SUDAH terdata, tanpa scan ulang ---- */
+function bpTombolKemasan(x){
+  return '<button class="qbtn" onclick="bpUbahKemasan(\''+esc(x.barcode).replace(/'/g,"\\'")+'\',\''+esc(x.kode).replace(/'/g,"\\'")+'\')" title="Kemasan">🏷️</button>';
+}
+function bpUbahKemasan(barcode, kode){
+  var x = bpPemilik(barcode).filter(function(y){ return y.kode===kode; })[0]; if(!x) return;
+  state.bpUbah = {baris:[{barcode:x.barcode, kode:x.kode}], judul:(x.nama||x.kode), rinci:x.barcode,
+                  kemasan:x.kemasan||'PACK', isi:x.isi||''};
+  bpUbahDialog();
+}
+function bpTandaiMassal(){
+  var list = bpHasilSaring();
+  if(!list.length){ toast('Tidak ada baris di daftar ini'); return; }
+  state.bpUbah = {baris:list.map(function(x){ return {barcode:x.barcode, kode:x.kode}; }),
+                  judul:list.length+' baris yang sedang tampil', rinci:'', kemasan:'BOX', isi:'', massal:true};
+  bpUbahDialog();
+}
+function bpUbahPilih(k){ var u = state.bpUbah; if(!u) return; var el = $('bpUIsi'); if(el) u.isi = el.value; u.kemasan = k; bpUbahDialog(); }
+function bpUbahBatal(){ state.bpUbah = null; hide('backBP'); bpFokus(); }
+function bpUbahDialog(){
+  var u = state.bpUbah; if(!u) return;
+  var h = '<div class="grab"></div><h3>Kemasan barcode</h3>'+
+    '<div style="text-align:center;font-weight:800;margin:2px 0 1px">'+esc(u.judul)+'</div>'+
+    (u.rinci? '<div class="muted" style="text-align:center;font-family:ui-monospace,Consolas,monospace">'+esc(u.rinci)+'</div>' : '')+
+    '<div style="height:10px"></div><div class="muted">Barcode ini kemasan apa?</div>'+
+    '<div style="display:flex;gap:8px;margin:6px 0 2px">'+
+    ['PACK','BOX'].map(function(k){
+      var on = u.kemasan===k;
+      return '<button type="button" onclick="bpUbahPilih(\''+k+'\')" style="flex:1;padding:10px 6px;border-radius:10px;cursor:pointer;'+
+        'font-weight:800;font-size:14px;border:1.5px solid '+(on?'var(--ok,#16a34a)':'var(--line)')+';'+
+        'background:'+(on?'rgba(22,163,74,.12)':'transparent')+'">'+
+        (k==='PACK'? 'PACK<br><s style="font-weight:600;font-size:11px;opacity:.75">satuan terkecil · 1 pcs</s>'
+                   : 'BOX<br><s style="font-weight:600;font-size:11px;opacity:.75">kemasan luar · banyak pcs</s>')+'</button>';
+    }).join('')+'</div>';
+  if(u.kemasan==='BOX'){
+    h += '<input id="bpUIsi" type="number" inputmode="numeric" min="2" step="1" value="'+esc(u.isi||'')+'" '+
+         'placeholder="1 box isi berapa pcs?" style="width:100%;margin-top:8px">'+
+         '<div class="muted" style="margin-top:4px;font-size:12px">Boleh dikosongkan — barcodenya tetap ditandai BOX, dan isinya bisa dilengkapi nanti lewat saringan "BOX tanpa isi".</div>';
+  }
+  if(u.massal){
+    h += '<div style="'+BP_PERINGATAN+'">⚠️ Ini menandai <b>'+u.baris.length+' baris sekaligus</b>. Pastikan daftar yang tampil memang semuanya kemasan itu.'+
+         (u.kemasan==='BOX'&&u.isi? ' Isi '+esc(u.isi)+' pcs akan dipakai untuk semuanya.' : '')+'</div>';
+  }
+  h += '<div style="height:12px"></div><button class="btn" id="btnBPUbah" onclick="bpUbahSimpan()">✅ Simpan keterangan</button>'+
+       '<div style="height:8px"></div><button class="btn sec" onclick="bpUbahBatal()">Batal</button>';
+  $('bpBox').innerHTML = h;
+  showEl('backBP');
+  setTimeout(function(){
+    var i = $('bpUIsi');
+    if(i){ i.focus(); i.onkeydown = function(e){ if(e.key==='Enter'){ e.preventDefault(); var b=$('btnBPUbah'); if(b) b.click(); } }; return; }
+    var b = $('btnBPUbah'); if(b) b.focus();
+  }, 120);
+}
+function bpUbahSimpan(){
+  var u = state.bpUbah; if(!u) return;
+  var el = $('bpUIsi'); if(el) u.isi = el.value;
+  var kemasan = u.kemasan==='BOX' ? 'BOX' : 'PACK';
+  var isi = kemasan==='BOX' ? (parseInt(u.isi,10)||'') : 1;
+  if(kemasan==='BOX' && isi===1){ toast('BOX isi 1 pcs sama saja dengan PACK — pilih PACK, atau isi jumlah pcs yang betul', 3600); return; }
+  state.bpUbah = null; hide('backBP');
+  // baris di layar langsung berubah; kalau server menolak, nilai lamanya dikembalikan
+  var kena = [], lama = [];
+  u.baris.forEach(function(b){
+    var x = bpPemilik(b.barcode).filter(function(y){ return y.kode===b.kode; })[0];
+    if(!x) return;
+    kena.push(x); lama.push({kemasan:x.kemasan, isi:x.isi});
+    x.kemasan = kemasan; x.isi = isi;
+  });
+  simpanBPLokal(); renderBP();
+  toast('🏷️ '+kena.length+' baris ditandai '+(kemasan==='BOX' ? (isi? 'BOX · '+isi+' pcs' : 'BOX · isi belum diisi') : 'PACK'), 3000);
+  antre({action:'bptandai', kemasan:kemasan, isi:isi, pic:state.user,
+         baris:u.baris.map(function(b){ return {barcode:b.barcode, kode:b.kode}; }),
+         __lanjut:function(o){
+           if(o && o.jumlahTidakKetemu) toast('⚠️ '+o.jumlahTidakKetemu+' baris tidak ketemu di sheet — muat ulang app', 4000);
+         },
+         __gagal:function(e){
+           kena.forEach(function(x, i){ x.kemasan = lama[i].kemasan; x.isi = lama[i].isi; });
+           simpanBPLokal(); renderBP();
+           alert('Keterangan kemasan GAGAL tersimpan: '+e.message+'\n\nData di layar sudah dikembalikan.');
+         }}, {tag:'bptandai-'+kemasan+'-'+(u.baris[0]?u.baris[0].barcode:'')+'-'+u.baris.length});
 }
 
 /* ================= PENERIMAAN RETUR =================
