@@ -717,9 +717,13 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
   <div class="sheet">
     <div class="grab"></div>
     <h3>📷 Scan barcode</h3>
-    <div id="reader"></div>
-    <div style="height:10px"></div>
-    <button class="btn sec" onclick="closeScan()">Tutup</button>
+    <div id="reader" onclick="fokusUlangScan()" title="Tap gambar untuk fokus ulang"></div>
+    <div id="scanInfo" class="muted" style="margin-top:8px;font-size:12px;min-height:17px;line-height:1.35"></div>
+    <div style="height:8px"></div>
+    <div class="row" style="gap:8px">
+      <button class="btn sec" id="btnLampu" onclick="lampuScan()" style="flex:1">🔆 Lampu</button>
+      <button class="btn sec" onclick="closeScan()" style="flex:1">Tutup</button>
+    </div>
   </div>
 </div>
 
@@ -1514,12 +1518,14 @@ function cocokBinNama(nama){
 function cariBinKode(teks){
   var v = String(teks||'').trim();
   if(!v) return false;
-  var m = state.byKode[normCode(v)] || state.byBar[normCode(v)];
-  if(!m){
-    $('nQ').value = v; renderBin();
-    toast('Kode "'+v+'" tidak ada di master data — dicarikan sebagai teks biasa', 3400);
-    return false;
-  }
+  // barisnya dicari lewat NAMA barang, jadi kode yang dipakai beberapa barang harus
+  // ditanyakan dulu — kalau salah, yang terbuka baris bin barang lain
+  if(barangLalu(v, function(m){ cariBinBarang(m); })) return true;
+  $('nQ').value = v; renderBin();
+  toast('Kode "'+v+'" tidak ada di master data — dicarikan sebagai teks biasa', 3400);
+  return false;
+}
+function cariBinBarang(m){
   var hit = cocokBinNama(m.nama);
   if(hit.length===1){ openBinEdit(hit[0].i); return true; }
   if(hit.length>1){
@@ -3380,10 +3386,44 @@ function setMaster(rows){
     return o;
   });
   state.byBar={}; state.byKode={};
+  /* Accurate memakai ULANG kode barang: ribuan kode dipakai dua material berbeda.
+     byKode hanya menyimpan satu barang per kode (yang terakhir menimpa yang awal), jadi
+     kode seperti itu bisa memunculkan barang yang salah. Peta *All menyimpan semuanya
+     supaya hasil scan yang bercabang bisa ditanyakan dulu, bukan ditebak. */
+  state.byBarAll={}; state.byKodeAll={};
   state.master.forEach(function(o){
-    if(o.barcode) state.byBar[normCode(o.barcode)] = o;
-    if(o.kode) state.byKode[normCode(o.kode)] = o;
+    if(o.barcode){
+      var kb = normCode(o.barcode);
+      state.byBar[kb] = o;
+      (state.byBarAll[kb] = state.byBarAll[kb] || []).push(o);
+    }
+    if(o.kode){
+      var kk = normCode(o.kode);
+      state.byKode[kk] = o;
+      (state.byKodeAll[kk] = state.byKodeAll[kk] || []).push(o);
+    }
   });
+}
+
+/* SEMUA barang yang cocok dengan satu kode/barcode — kode dulu, baru barcode */
+function barangDariKode(v){
+  var k = normCode(v), lihat = {}, out = [];
+  ((state.byKodeAll && state.byKodeAll[k]) || []).concat((state.byBarAll && state.byBarAll[k]) || [])
+    .forEach(function(o){ if(!lihat[o.i]){ lihat[o.i] = 1; out.push(o); } });
+  return out;
+}
+
+/* Kode → barang, lalu jalankan fn. Kalau kodenya dipakai beberapa barang, tim DITANYA
+   dulu (scanner pistol & ketik manual lewat sini juga, bukan cuma kamera).
+   false = kodenya memang tidak ada di master. */
+function barangLalu(v, fn){
+  var cal = barangDariKode(v);
+  if(!cal.length) return false;
+  if(cal.length===1){ fn(cal[0]); return true; }
+  bukaPilih('⚠️ Kode '+String(v).trim()+' dipakai '+cal.length+' barang',
+    cal.map(function(o){ return {v:String(o.i), t:o.nama||o.kode, m:o.kode+(o.satuan? ' • '+o.satuan : '')}; }), '',
+    function(iv){ var o = state.master[+iv]; if(o) fn(o); });
+  return true;
 }
 
 /* ================= CARI ITEM ================= */
@@ -3416,8 +3456,7 @@ function bindSearch(){
   $('bQ').addEventListener('keydown', function(e){
     if(e.key!=='Enter') return;
     e.preventDefault();
-    var hit = state.byKode[normCode($('bQ').value.trim())] || state.byBar[normCode($('bQ').value.trim())];
-    if(hit && (state.bMode||'normal')==='normal') tanyaDus(hit);
+    if((state.bMode||'normal')==='normal') barangLalu($('bQ').value.trim(), tanyaDus);
   });
   /* Pendataan ulang. Scanner pistol mengetik kode lalu Enter → tiap Enter = +1 dus,
      jadi menembak dus yang sama 3× langsung jadi 3 dus tanpa menyentuh layar.
@@ -3445,16 +3484,13 @@ function bindSearch(){
     e.preventDefault();
     var v = $('mQ').value.trim();
     if(!v) return;
-    var hit = state.byKode[normCode(v)] || state.byBar[normCode(v)];
-    if(!hit){ toast('Kode tidak ada di master: '+v, 3000); return; }
-    tambahMR(hit);
+    if(!barangLalu(v, tambahMR)) toast('Kode tidak ada di master: '+v, 3000);
   });
   $('dQ').addEventListener('input', function(){ clearTimeout(td); td=setTimeout(dsCari,110); });
   $('dQ').addEventListener('keydown', function(e){
     if(e.key!=='Enter') return;
     e.preventDefault();
-    var hit = state.byKode[normCode($('dQ').value.trim())] || state.byBar[normCode($('dQ').value.trim())];
-    if(hit) tanyaQtyDS(hit);
+    barangLalu($('dQ').value.trim(), tanyaQtyDS);
   });
   var tt=null;
   $('tQ').addEventListener('input', function(){ clearTimeout(tt); tt=setTimeout(renderStiker,110); });
@@ -3476,8 +3512,7 @@ function bindSearch(){
     if(e.key!=='Enter') return;
     e.preventDefault();
     // scanner pistol: kode + Enter → langsung buka isian qty & kendala
-    var hit = state.byKode[normCode($('rQ').value.trim())] || state.byBar[normCode($('rQ').value.trim())];
-    if(hit) returTanya(hit);
+    barangLalu($('rQ').value.trim(), returTanya);
   });
   /* Barcode Produk. Scanner pistol mengetik lalu Enter:
      di langkah 1 → memilih barang; di langkah 2 → barcode kemasan langsung diperiksa. */
@@ -4113,8 +4148,10 @@ function bpBarangDari(x){
    sudah terdata (perilaku kasir). Barcode ganda → pilih dari daftar pendek pemiliknya. */
 function bpCariEnter(v){
   v = String(v||'').trim(); if(!v) return;
-  var o = state.byKode[normCode(v)] || state.byBar[normCode(v)];
-  if(o){ bpPilih(o); return; }
+  // kode yang dipakai beberapa barang harus ditanyakan — kalau salah pilih, barcode
+  // pabriknya tercatat untuk barang yang salah
+  var cal = barangDariKode(v);
+  if(cal.length){ barangLalu(v, bpPilih); return; }
   var ada = bpPemilik(v);
   if(ada.length===1){
     bpPilih(bpBarangDari(ada[0]));
@@ -4784,81 +4821,149 @@ function returBatal(no){
 /* ================= SCANNER ================= */
 /* dipakai tombol 📷 di layar Transaksi Bulk: satu tombol untuk dua hal —
    scan QR label koli, atau barcode barangnya langsung */
+/* ================= SCAN KAMERA =================
+   Dua keluhan dari lapangan (24/10/2026): kameranya susah fokus, dan sekalinya terbaca
+   kodenya malah salah. Keduanya ditangani di sini.
+
+   SUSAH FOKUS — dulu kamera diminta apa adanya (640×480, tanpa autofokus) dan kotak
+   bacanya 260×170. Sekarang: resolusi tinggi, autofokus terus-menerus, pakai pembaca
+   barcode bawaan HP kalau ada (jauh lebih tahan gambar goyang), kotak baca selebar layar
+   karena barcode 1D itu lebar & pendek, tombol lampu, dan tap gambar untuk fokus ulang.
+
+   SALAH KODE — ada dua sebab yang berbeda:
+   1. salah BACA. Barcode 1D bisa terbaca melenceng dari satu gambar yang kabur. Sekarang
+      hasil 1D baru diterima kalau terbaca SAMA dua kali berturut-turut, check digit
+      EAN/UPC diperiksa, dan format yang tidak dipakai gudang dimatikan (ITF paling sering
+      memberi hasil palsu dari potongan barcode lain). QR tidak perlu dipastikan dua kali
+      karena punya koreksi galat sendiri.
+   2. salah BARANG. Kode Accurate dipakai ulang untuk material berbeda, dan dulu yang
+      muncul cuma satu barang (yang terakhir menimpa yang awal). Sekarang kalau satu kode
+      dipakai beberapa barang, tim DITANYA dulu — tidak ditebak. */
+var SCAN_1D_ULANG = 2;   // barcode 1D harus terbaca sama berturut-turut sebanyak ini
+
 function openScanKoli(){ openScan(true); }
+
+function pesanScan(t){ if($('scanInfo')) $('scanInfo').textContent = t||''; }
+
+function trackScan(){
+  try{
+    var v = document.querySelector('#reader video');
+    return (v && v.srcObject) ? (v.srcObject.getVideoTracks()[0] || null) : null;
+  }catch(e){ return null; }
+}
+function kemampuanScan(){
+  var t = trackScan();
+  try{ return (t && t.getCapabilities) ? (t.getCapabilities()||{}) : {}; }catch(e){ return {}; }
+}
+/* Tap gambar = fokus ulang. Di HP yang mendukung, fokus dipaksa sekali-jepret dulu lalu
+   dikembalikan ke terus-menerus — itu yang membuat lensa benar-benar mencari ulang. */
+function fokusUlangScan(){
+  var t = trackScan(); if(!t || !t.applyConstraints) return;
+  var c = kemampuanScan(), mode = c.focusMode || [];
+  var punya = function(m){ return mode.indexOf && mode.indexOf(m) >= 0; };
+  if(!punya('continuous') && !punya('single-shot') && !punya('manual')) return;
+  pesanScan('Fokus ulang…');
+  var terus = function(){ try{ t.applyConstraints({advanced:[{focusMode:'continuous'}]}); }catch(e){} };
+  if(punya('single-shot')){
+    t.applyConstraints({advanced:[{focusMode:'single-shot'}]}).then(function(){ setTimeout(terus, 600); }).catch(terus);
+  } else terus();
+}
+function lampuScan(){
+  var t = trackScan();
+  if(!t || !t.applyConstraints){ toast('Kamera belum siap', 2200); return; }
+  if(!kemampuanScan().torch){ toast('Kamera ini tidak punya lampu', 2800); return; }
+  state.scanLampu = !state.scanLampu;
+  t.applyConstraints({advanced:[{torch:state.scanLampu}]}).then(function(){
+    if($('btnLampu')) $('btnLampu').textContent = state.scanLampu ? '🔅 Lampu mati' : '🔆 Lampu';
+  }).catch(function(){
+    state.scanLampu = !state.scanLampu;
+    toast('Lampu tidak bisa dinyalakan di HP ini', 2800);
+  });
+}
+
+function formatScan_(){
+  if(typeof Html5QrcodeSupportedFormats === 'undefined') return null;
+  var F = Html5QrcodeSupportedFormats;
+  // sengaja TANPA ITF/CODABAR/2D lain: tidak dipakai di gudang, dan tiap format tambahan
+  // menambah peluang salah baca sekaligus memperlambat decode
+  return [F.QR_CODE, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39]
+    .filter(function(x){ return x != null; });
+}
+
+/* check digit EAN-13/EAN-8/UPC-A — hasil yang gagal hitung sudah pasti salah baca */
+function cekDigitEAN(s){
+  s = String(s||'').replace(/\D/g,'');
+  var n = s.length;
+  if(n !== 13 && n !== 12 && n !== 8) return true;     // panjang lain tidak dinilai
+  var jum = 0;
+  for(var i = 0; i < n-1; i++) jum += ((n-1-i) % 2 === 1) ? (+s.charAt(i) * 3) : (+s.charAt(i));
+  return ((10 - (jum % 10)) % 10) === +s.charAt(n-1);
+}
+
+/* true = hasil scan boleh dipakai. 1D wajib terbaca sama dua kali berturut-turut. */
+function scanDipastikan(txt, format){
+  format = String(format||'').toUpperCase();
+  if(/QR|DATA_MATRIX|AZTEC|PDF/.test(format)){ state.scanBuf = null; return true; }
+  if(/^(EAN|UPC)/.test(format) && !cekDigitEAN(txt)){
+    state.scanBuf = null;
+    pesanScan('Terbaca ' + txt + ' tapi angkanya tidak sah — arahkan ulang');
+    return false;
+  }
+  if(!state.scanBuf || state.scanBuf.txt !== txt){
+    state.scanBuf = {txt:txt, n:1};
+    pesanScan('Memastikan ' + txt + ' …');
+    return false;
+  }
+  if(++state.scanBuf.n < SCAN_1D_ULANG){ pesanScan('Memastikan ' + txt + ' …'); return false; }
+  state.scanBuf = null;
+  return true;
+}
+
 function openScan(modeKoli, target){
   hangatkan();
   showEl('backScan');
   state.scanKoli = !!modeKoli;
   state.scanTarget = target||'item';
+  state.scanBuf = null; state.scanLampu = false;
+  if($('btnLampu')) $('btnLampu').textContent = '🔆 Lampu';
+  pesanScan('Dekatkan barcode, isi kotaknya. Tap gambar kalau kabur.');
   var start = function(){
     try{
-      state.scanner = new Html5Qrcode('reader');
-      state.scanner.start({facingMode:'environment'}, {fps:10, qrbox:{width:260, height:170}}, function(txt){
+      // pembaca barcode bawaan HP (Android Chrome): lebih cepat & lebih tahan gambar goyang
+      var cfg = {experimentalFeatures: {useBarCodeDetectorIfSupported: true}};
+      var fmt = formatScan_();
+      // kuncinya hanya dipasang kalau daftarnya memang ada — pustaka versi tertentu
+      // membaca panjang daftar tanpa memeriksa dulu
+      if(fmt && fmt.length) cfg.formatsToSupport = fmt;
+      state.scanner = new Html5Qrcode('reader', cfg);
+      var kamera = {
+        facingMode: {ideal:'environment'},
+        width: {ideal:1920}, height: {ideal:1080},
+        // focusMode hanya di 'advanced': kalau ditaruh di atas dan HP tidak mendukung,
+        // getUserMedia menolak sama sekali dan kamera tidak jadi terbuka
+        advanced: [{focusMode:'continuous'}]
+      };
+      var atur = {
+        fps: 12,
+        // barcode 1D lebar & pendek → kotak baca mengikuti lebar layar, bukan 260px tetap
+        qrbox: function(w, h){
+          var lebar = Math.max(200, Math.floor(Math.min(w || 300, 520) * 0.92));
+          var tinggi = Math.max(110, Math.floor(Math.min((h || 300) * 0.6, lebar * 0.55)));
+          return {width:lebar, height:tinggi};
+        }
+      };
+      state.scanner.start(kamera, atur, function(txt, hasil){
+        txt = String(txt).trim();
+        var format = '';
+        try{ format = hasil.result.format.formatName || ''; }catch(e){}
         // pendataan ulang perlu tembakan beruntun (1 tembakan = 1 dus) → jedanya pendek
         var jedaSama = (state.scanTarget==='mr2') ? 900 : 1500;
         if(state._last===txt && Date.now()-state._lastT<jedaSama) return;
-        if(state.scanKoli){                       // scan QR label koli → buka isinya untuk diambil
-          state._last=txt; state._lastT=Date.now();
-          closeScan(); $('aQ').value = String(txt).trim(); cariKoliAmbil();
-          return;
-        }
-        if(state.scanTarget==='bulk' || state.scanTarget==='ds'){   // scan barang untuk didata di bulk
-          var b = state.byKode[normCode(txt)] || state.byBar[normCode(txt)];
-          state._last=txt; state._lastT=Date.now();
-          closeScan();
-          if(!b){ toast('Kode tidak ada di master: '+txt, 3200); return; }
-          if(state.scanTarget==='ds') tanyaQtyDS(b); else tanyaDus(b);
-          return;
-        }
-        // Master Rack V2: kamera dibiarkan terbuka — satu alamat biasanya diisi
-        // banyak barang beruntun, jadi tidak perlu buka-tutup kamera tiap item
-        if(state.scanTarget==='mr2'){
-          var bm = state.byKode[normCode(txt)] || state.byBar[normCode(txt)];
-          state._last=txt; state._lastT=Date.now();
-          if(!bm){ toast('Kode tidak ada di master: '+txt, 2600); return; }
-          tambahMR(bm);
-          return;
-        }
-        if(state.scanTarget==='mrcari'){       // scan untuk MELIHAT lokasinya, bukan mendata
-          state._last=txt; state._lastT=Date.now();
-          closeScan();
-          var lok = state.mr2.filter(function(x){ return normCode(x.kode)===normCode(txt); });
-          if(lok.length===1){ bukaAlamatMR(lok[0].alamat); return; }
-          if($('mQL')) $('mQL').value = String(txt).trim();
-          renderMR();
-          if(!lok.length) toast('Barang ini belum terdata lokasinya', 3000);
-          return;
-        }
-        if(state.scanTarget==='bpitem'){          // Barcode Produk langkah 1: pilih barang
-          state._last=txt; state._lastT=Date.now();
-          closeScan(); bpCariEnter(String(txt));
-          return;
-        }
-        if(state.scanTarget==='bpbar'){           // Barcode Produk langkah 2: barcode kemasan
-          state._last=txt; state._lastT=Date.now();
-          closeScan(); bpTerima(String(txt));
-          return;
-        }
-        if(state.scanTarget==='retur'){           // scan barang yang diretur toko
-          var br = state.byKode[normCode(txt)] || state.byBar[normCode(txt)];
-          state._last=txt; state._lastT=Date.now();
-          closeScan();
-          if(!br){ toast('Kode tidak ada di master: '+txt, 3200); return; }
-          returTanya(br);
-          return;
-        }
-        if(state.scanTarget==='bin'){             // scan barcode item → buka barisnya di database BIN
-          state._last=txt; state._lastT=Date.now();
-          closeScan();
-          cariBinKode(String(txt).trim());
-          return;
-        }
-        // tiap modul menetapkan scanTarget-nya sendiri; kalau sampai ke sini berarti
-        // kamera dibuka dari layar yang tidak menangani hasil scan
+        if(!scanDipastikan(txt, format)) return;
         state._last=txt; state._lastT=Date.now();
-        closeScan();
-        toast('Scan tidak dipakai di layar ini', 2600);
+        scanTerima(txt);
       }, function(){});
+      setTimeout(fokusUlangScan, 1200);
     }catch(e){ toast('Kamera gagal: '+e.message, 3000); }
   };
   if(typeof Html5Qrcode==='undefined'){
@@ -4868,8 +4973,51 @@ function openScan(modeKoli, target){
     document.head.appendChild(s);
   } else start();
 }
+
+/* Hasil scan yang sudah dipastikan benar → disalurkan ke layar yang membukanya */
+function scanTerima(txt){
+  var t = state.scanTarget;
+  if(state.scanKoli){                       // scan QR label koli → buka isinya untuk diambil
+    closeScan(); $('aQ').value = txt; cariKoliAmbil();
+    return;
+  }
+  if(t==='bpitem'){ closeScan(); bpCariEnter(txt); return; }   // Barcode Produk langkah 1
+  if(t==='bpbar'){ closeScan(); bpTerima(txt); return; }       // Barcode Produk langkah 2
+  if(t==='bin'){ closeScan(); cariBinKode(txt); return; }
+  if(t==='mrcari'){                         // scan untuk MELIHAT lokasinya, bukan mendata
+    closeScan();
+    var lok = state.mr2.filter(function(x){ return normCode(x.kode)===normCode(txt); });
+    if(lok.length===1){ bukaAlamatMR(lok[0].alamat); return; }
+    if($('mQL')) $('mQL').value = txt;
+    renderMR();
+    if(!lok.length) toast('Barang ini belum terdata lokasinya', 3000);
+    return;
+  }
+  // sisanya butuh barangnya dari master
+  var cal = barangDariKode(txt);
+  if(!cal.length){ closeScan(); toast('Kode tidak ada di master: '+txt, 3200); return; }
+  // bercabang → tanya, jangan tebak (kamera ditutup dulu supaya pemilihnya kelihatan)
+  if(cal.length>1){ closeScan(); barangLalu(txt, scanLanjutBarang); return; }
+  scanLanjutBarang(cal[0]);
+}
+
+function scanLanjutBarang(b){
+  var t = state.scanTarget;
+  // Master Rack V2: kamera dibiarkan terbuka — satu alamat biasanya diisi banyak barang
+  // beruntun, jadi tidak perlu buka-tutup kamera tiap item
+  if(t==='mr2'){ tambahMR(b); pesanScan('✅ '+(b.nama||b.kode)); return; }
+  closeScan();
+  if(t==='bulk') tanyaDus(b);
+  else if(t==='ds') tanyaQtyDS(b);
+  else if(t==='retur') returTanya(b);
+  // tiap modul menetapkan scanTarget-nya sendiri; kalau sampai ke sini berarti kamera
+  // dibuka dari layar yang tidak menangani hasil scan
+  else toast('Scan tidak dipakai di layar ini', 2600);
+}
+
 function closeScan(){
   hide('backScan');
+  state.scanBuf = null;
   if(state.scanner){
     try{ state.scanner.stop().then(function(){ state.scanner.clear(); state.scanner=null; }); }
     catch(e){ state.scanner=null; }
