@@ -4927,7 +4927,27 @@ function openScan(modeKoli, target){
   state.scanBuf = null; state.scanLampu = false;
   if($('btnLampu')) $('btnLampu').textContent = '🔆 Lampu';
   pesanScan('Dekatkan barcode, isi kotaknya. Tap gambar kalau kabur.');
-  var start = function(){
+  // barcode 1D lebar & pendek → kotak baca mengikuti lebar layar, bukan 260px tetap
+  var kotakBaca = function(w, h){
+    var lebar = Math.max(200, Math.floor(Math.min(w || 300, 520) * 0.92));
+    var tinggi = Math.max(110, Math.floor(Math.min((h || 300) * 0.6, lebar * 0.55)));
+    return {width:lebar, height:tinggi};
+  };
+  var terbaca = function(txt, hasil){
+    txt = String(txt).trim();
+    var format = '';
+    try{ format = hasil.result.format.formatName || ''; }catch(e){}
+    // pendataan ulang perlu tembakan beruntun (1 tembakan = 1 dus) → jedanya pendek
+    var jedaSama = (state.scanTarget==='mr2') ? 900 : 1500;
+    if(state._last===txt && Date.now()-state._lastT<jedaSama) return;
+    if(!scanDipastikan(txt, format)) return;
+    state._last=txt; state._lastT=Date.now();
+    scanTerima(txt);
+  };
+  /* polos = percobaan kedua tanpa permintaan apa pun. HP yang tidak sanggup 1080p atau
+     tidak punya autofokus tetap harus bisa scan — lebih baik kamera seadanya daripada
+     layar kosong. */
+  var jalan = function(polos){
     try{
       // pembaca barcode bawaan HP (Android Chrome): lebih cepat & lebih tahan gambar goyang
       var cfg = {experimentalFeatures: {useBarCodeDetectorIfSupported: true}};
@@ -4936,36 +4956,32 @@ function openScan(modeKoli, target){
       // membaca panjang daftar tanpa memeriksa dulu
       if(fmt && fmt.length) cfg.formatsToSupport = fmt;
       state.scanner = new Html5Qrcode('reader', cfg);
-      var kamera = {
-        facingMode: {ideal:'environment'},
-        width: {ideal:1920}, height: {ideal:1080},
-        // focusMode hanya di 'advanced': kalau ditaruh di atas dan HP tidak mendukung,
-        // getUserMedia menolak sama sekali dan kamera tidak jadi terbuka
-        advanced: [{focusMode:'continuous'}]
-      };
-      var atur = {
-        fps: 12,
-        // barcode 1D lebar & pendek → kotak baca mengikuti lebar layar, bukan 260px tetap
-        qrbox: function(w, h){
-          var lebar = Math.max(200, Math.floor(Math.min(w || 300, 520) * 0.92));
-          var tinggi = Math.max(110, Math.floor(Math.min((h || 300) * 0.6, lebar * 0.55)));
-          return {width:lebar, height:tinggi};
-        }
-      };
-      state.scanner.start(kamera, atur, function(txt, hasil){
-        txt = String(txt).trim();
-        var format = '';
-        try{ format = hasil.result.format.formatName || ''; }catch(e){}
-        // pendataan ulang perlu tembakan beruntun (1 tembakan = 1 dus) → jedanya pendek
-        var jedaSama = (state.scanTarget==='mr2') ? 900 : 1500;
-        if(state._last===txt && Date.now()-state._lastT<jedaSama) return;
-        if(!scanDipastikan(txt, format)) return;
-        state._last=txt; state._lastT=Date.now();
-        scanTerima(txt);
-      }, function(){});
-      setTimeout(fokusUlangScan, 1200);
-    }catch(e){ toast('Kamera gagal: '+e.message, 3000); }
+    }catch(e){ pesanScan(''); toast('Kamera gagal disiapkan: '+(e && e.message ? e.message : e), 3400); return; }
+    var atur = {fps: polos ? 10 : 12, qrbox: kotakBaca};
+    /* Resolusi & fokus HARUS lewat videoConstraints di sini. Argumen pertama start()
+       wajib berisi TEPAT SATU kunci (facingMode saja) — diisi lebih, html5-qrcode
+       menolak dan kameranya tidak pernah muncul (kejadian 24/10/2026). */
+    if(!polos) atur.videoConstraints = {
+      facingMode: {ideal:'environment'},
+      width: {ideal:1920}, height: {ideal:1080},
+      // focusMode hanya di 'advanced': kalau diminta sebagai syarat wajib dan HP tidak
+      // mendukung, getUserMedia menolak sama sekali
+      advanced: [{focusMode:'continuous'}]
+    };
+    state.scanner.start({facingMode:'environment'}, atur, terbaca, function(){})
+      .then(function(){
+        pesanScan('Dekatkan barcode, isi kotaknya. Tap gambar kalau kabur.');
+        setTimeout(fokusUlangScan, 1200);
+      })
+      .catch(function(e){
+        try{ state.scanner.clear(); }catch(e2){}
+        state.scanner = null;
+        if(!polos){ pesanScan('Menyesuaikan kamera…'); jalan(true); return; }
+        pesanScan('Kamera tidak bisa dibuka. Pakai scanner pistol atau ketik kodenya.');
+        toast('Kamera gagal dibuka: '+(e && e.message ? e.message : e), 4600);
+      });
   };
+  var start = function(){ jalan(false); };
   if(typeof Html5Qrcode==='undefined'){
     var s=document.createElement('script');
     s.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
