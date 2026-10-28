@@ -719,11 +719,14 @@ table.dt td.q,table.dt th.q{text-align:right;white-space:nowrap}
     <h3>📷 Scan barcode</h3>
     <div id="reader" onclick="fokusUlangScan()" title="Tap gambar untuk fokus ulang"></div>
     <div id="scanInfo" class="muted" style="margin-top:8px;font-size:12px;min-height:17px;line-height:1.35"></div>
+    <div id="scanZoom" style="margin-top:6px"></div>
     <div style="height:8px"></div>
     <div class="row" style="gap:8px">
       <button class="btn sec" id="btnLampu" onclick="lampuScan()" style="flex:1">🔆 Lampu</button>
-      <button class="btn sec" onclick="closeScan()" style="flex:1">Tutup</button>
+      <button class="btn sec" id="btnMesin" onclick="gantiMesinScan()" style="flex:1" title="Kalau barcode tidak terbaca, coba mesin baca yang lain">🔁 Mesin baca</button>
     </div>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="closeScan()">Tutup</button>
   </div>
 </div>
 
@@ -778,7 +781,8 @@ var DEFAULT_PICS = [
 ];
 var LS = {exec:'tk_exec', theme:'tk_theme', user:'tk_user', master:'tk_master_v1',
           antre:'tk_antre_v1', bin:'tk_bin_v1', stiker:'tk_stiker_v1',
-          rakd:'tk_rakd_v1', mr2:'tk_mr2_v1', bulk:'tk_bulk_v1', rdraft:'tk_rdraft_v1', bp:'tk_bp_v1'};
+          rakd:'tk_rakd_v1', mr2:'tk_mr2_v1', bulk:'tk_bulk_v1', rdraft:'tk_rdraft_v1', bp:'tk_bp_v1',
+          scanMesin:'tk_scan_mesin'};
 /* Sisa modul Log Penerimaan & Master Rack (dihapus 12/09/2026). Dibersihkan sekali
    supaya penyimpanan HP tidak terus dipakai data yang tak ada lagi pembacanya —
    ada yang isinya foto koli, dan itu bagian terbesar dari jatah localStorage. */
@@ -4850,6 +4854,7 @@ function returBatal(no){
    diandalkan; yang menolong cuma pengulangan. */
 var SCAN_1D_ULANG = 2;
 var SCAN_1D_ULANG_TANPA_CEK = 3;
+var SCAN_INGAT_MS = 5000;   // jendela waktu hitungan "terbaca sama sekian kali"
 
 function openScanKoli(){ openScan(true); }
 
@@ -4878,6 +4883,45 @@ function fokusUlangScan(){
     t.applyConstraints({advanced:[{focusMode:'single-shot'}]}).then(function(){ setTimeout(terus, 600); }).catch(terus);
   } else terus();
 }
+/* ZOOM — ini kunci barcode kecil. Kamera HP tidak bisa fokus di bawah ±10 cm, jadi
+   "didekatkan sampai memenuhi layar" justru membuat gambarnya selamanya kabur. Yang benar:
+   tahan di jarak yang masih bisa fokus, lalu zoom supaya garis barcodenya tetap besar. */
+function siapkanZoom(){
+  var baris = $('scanZoom'); if(!baris) return;
+  baris.innerHTML = '';
+  var t = trackScan(); if(!t || !t.applyConstraints) return;
+  var z = kemampuanScan().zoom;
+  if(!z || typeof z.max !== 'number') return;
+  var min = typeof z.min === 'number' ? z.min : 1;
+  var max = Math.min(z.max, min * 5);
+  if(!(max > min)) return;
+  var langkah = z.step || ((max - min) / 20) || 0.1;
+  var awal = Math.min(max, min * 2);            // 2× biasanya pas untuk barcode kecil
+  baris.innerHTML = '<div class="row" style="align-items:center;gap:8px">'+
+    '<span class="muted" style="font-size:12px">Zoom</span>'+
+    '<input type="range" id="scanZoomR" min="'+min+'" max="'+max+'" step="'+langkah+'" value="'+awal+'" '+
+      'style="flex:1" oninput="zoomScan(this.value)">'+
+    '<span class="muted" id="scanZoomN" style="font-size:12px;min-width:34px;text-align:right"></span></div>';
+  zoomScan(awal);
+}
+function zoomScan(v){
+  var t = trackScan(); if(!t || !t.applyConstraints) return;
+  v = Number(v) || 1;
+  if($('scanZoomN')) $('scanZoomN').textContent = v.toFixed(1) + '×';
+  try{ t.applyConstraints({advanced:[{zoom:v}]}); }catch(e){}
+}
+
+/* Mesin baca cadangan. Pembaca bawaan HP dan ZXing punya kekuatan berbeda — ada barcode
+   yang mentah di satu mesin tapi langsung terbaca di mesin lain. Pilihan petugas diingat. */
+function gantiMesinScan(){
+  state.scanZXing = !state.scanZXing;
+  try{ localStorage.setItem(LS.scanMesin, state.scanZXing ? '1' : '0'); }catch(e){}
+  toast(state.scanZXing ? 'Pakai mesin baca ZXing' : 'Pakai pembaca bawaan HP', 2400);
+  var koli = state.scanKoli, target = state.scanTarget;
+  closeScan();
+  setTimeout(function(){ openScan(koli, target); }, 350);
+}
+
 function lampuScan(){
   var t = trackScan();
   if(!t || !t.applyConstraints){ toast('Kamera belum siap', 2200); return; }
@@ -4916,22 +4960,24 @@ function scanDipastikan(txt, format){
   if(/QR|DATA_MATRIX|AZTEC|PDF/.test(format)){ state.scanBuf = null; return true; }
   var adaCek = /^(EAN|UPC)/.test(format);
   if(adaCek && !cekDigitEAN(txt)){
-    state.scanBuf = null;
     pesanScan('Terbaca ' + txt + ' tapi angkanya tidak sah — arahkan ulang');
     return false;
   }
   // format tak dikenal diperlakukan seperti CODE_128: lebih baik minta sekali lagi
   var perlu = adaCek ? SCAN_1D_ULANG : SCAN_1D_ULANG_TANPA_CEK;
-  if(!state.scanBuf || state.scanBuf.txt !== txt){
-    state.scanBuf = {txt:txt, n:1};
-    pesanScan('Memastikan ' + txt + ' … (1/' + perlu + ')');
-    return false;
-  }
-  if(++state.scanBuf.n < perlu){
-    pesanScan('Memastikan ' + txt + ' … (' + state.scanBuf.n + '/' + perlu + ')');
-    return false;
-  }
-  state.scanBuf = null;
+  /* Hitungannya memakai jendela waktu, bukan "harus berturut-turut persis". Satu frame
+     yang meleset di tengah tidak lagi menghanguskan hitungan — itu yang dulu bikin
+     barcode terasa tidak pernah terbaca. Yang salah pun tidak ikut lolos: tiap nilai
+     punya hitungannya sendiri, dan harus mencapai jumlah yang sama. */
+  var now = Date.now();
+  var buf = (state.scanBuf && state.scanBuf.length ? state.scanBuf : [])
+    .filter(function(x){ return now - x.t < SCAN_INGAT_MS; });
+  buf.push({v:txt, t:now});
+  state.scanBuf = buf;
+  var n = 0;
+  for(var i=0;i<buf.length;i++) if(buf[i].v === txt) n++;
+  if(n < perlu){ pesanScan('Memastikan ' + txt + ' … (' + n + '/' + perlu + ')'); return false; }
+  state.scanBuf = [];
   return true;
 }
 
@@ -4940,9 +4986,14 @@ function openScan(modeKoli, target){
   showEl('backScan');
   state.scanKoli = !!modeKoli;
   state.scanTarget = target||'item';
-  state.scanBuf = null; state.scanLampu = false;
+  state.scanBuf = []; state.scanLampu = false;
+  try{ state.scanZXing = localStorage.getItem(LS.scanMesin)==='1'; }catch(e){ state.scanZXing = false; }
   if($('btnLampu')) $('btnLampu').textContent = '🔆 Lampu';
-  pesanScan('Dekatkan barcode, isi kotaknya. Tap gambar kalau kabur.');
+  if($('btnMesin')) $('btnMesin').textContent = state.scanZXing ? '🔁 Mesin: ZXing' : '🔁 Mesin: bawaan HP';
+  if($('scanZoom')) $('scanZoom').innerHTML = '';
+  // JANGAN suruh mendekat: kamera HP tidak bisa fokus di bawah ±10 cm, dan barcode kecil
+  // jadi kabur permanen. Yang benar: mundur sampai fokus, lalu besarkan pakai zoom.
+  pesanScan('Jarak ±15 cm (jangan terlalu dekat), lalu besarkan pakai Zoom. Tap gambar kalau kabur.');
   // barcode 1D lebar & pendek → kotak baca mengikuti lebar layar, bukan 260px tetap
   var kotakBaca = function(w, h){
     var lebar = Math.max(200, Math.floor(Math.min(w || 300, 520) * 0.92));
@@ -4965,8 +5016,9 @@ function openScan(modeKoli, target){
      layar kosong. */
   var jalan = function(polos){
     try{
-      // pembaca barcode bawaan HP (Android Chrome): lebih cepat & lebih tahan gambar goyang
-      var cfg = {experimentalFeatures: {useBarCodeDetectorIfSupported: true}};
+      // pembaca barcode bawaan HP (Android Chrome): lebih cepat & lebih tahan gambar goyang.
+      // Bisa dimatikan petugas lewat tombol "Mesin baca" kalau ada barcode yang mentah di situ.
+      var cfg = {experimentalFeatures: {useBarCodeDetectorIfSupported: !state.scanZXing}};
       var fmt = formatScan_();
       // kuncinya hanya dipasang kalau daftarnya memang ada — pustaka versi tertentu
       // membaca panjang daftar tanpa memeriksa dulu
@@ -4986,8 +5038,9 @@ function openScan(modeKoli, target){
     };
     state.scanner.start({facingMode:'environment'}, atur, terbaca, function(){})
       .then(function(){
-        pesanScan('Dekatkan barcode, isi kotaknya. Tap gambar kalau kabur.');
-        setTimeout(fokusUlangScan, 1200);
+        pesanScan('Jarak ±15 cm (jangan terlalu dekat), lalu besarkan pakai Zoom. Tap gambar kalau kabur.');
+        // kemampuan track baru terbaca setelah kameranya benar-benar menyala
+        setTimeout(function(){ siapkanZoom(); fokusUlangScan(); }, 900);
       })
       .catch(function(e){
         try{ state.scanner.clear(); }catch(e2){}
@@ -5049,7 +5102,8 @@ function scanLanjutBarang(b){
 
 function closeScan(){
   hide('backScan');
-  state.scanBuf = null;
+  state.scanBuf = [];
+  if($('scanZoom')) $('scanZoom').innerHTML = '';
   if(state.scanner){
     try{ state.scanner.stop().then(function(){ state.scanner.clear(); state.scanner=null; }); }
     catch(e){ state.scanner=null; }
