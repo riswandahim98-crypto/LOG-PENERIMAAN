@@ -4221,6 +4221,8 @@ function bpDialog(){
   var h = '<div class="grab"></div><h3>Yakin simpan?</h3>'+
     '<div style="font:800 22px/1.2 ui-monospace,Consolas,monospace;text-align:center;letter-spacing:1px;'+
       'padding:12px 8px;border:1.5px dashed var(--line);border-radius:10px;margin:8px 0 6px;word-break:break-all">'+esc(p.barcode)+'</div>'+
+    // kamera HP bisa salah baca barcode 1D — angkanya dicocokkan mata dulu sebelum disimpan
+    '<div class="muted" style="text-align:center;font-size:12px;margin-bottom:6px">cocokkan dengan tulisan di bawah barcodenya</div>'+
     '<div class="muted" style="text-align:center">barcode pabrik untuk</div>'+
     '<div style="text-align:center;font-weight:800;margin:3px 0 1px">'+esc(p.item.nama||p.item.kode)+'</div>'+
     '<div class="muted" style="text-align:center">'+esc(p.item.kode)+(p.item.satuan? ' • '+esc(p.item.satuan) : '')+'</div>';
@@ -4839,7 +4841,15 @@ function returBatal(no){
    2. salah BARANG. Kode Accurate dipakai ulang untuk material berbeda, dan dulu yang
       muncul cuma satu barang (yang terakhir menimpa yang awal). Sekarang kalau satu kode
       dipakai beberapa barang, tim DITANYA dulu — tidak ditebak. */
-var SCAN_1D_ULANG = 2;   // barcode 1D harus terbaca sama berturut-turut sebanyak ini
+/* Berapa kali barcode 1D harus terbaca SAMA berturut-turut sebelum dipakai.
+   EAN/UPC cukup 2× karena check digitnya kita periksa sendiri dan benar-benar menolak
+   hasil yang melenceng. CODE_128/CODE_39 butuh 3×: diuji dengan foto barcode asli
+   (TAZE-01-017, 26/10/2026), dari 117 pembacaan yang "berhasil" ada 30 yang salah
+   ("TAZE%01,z17") — dan salahnya LOLOS dari checksum bawaan Code 128, karena yang
+   melenceng tafsir kode-setnya, bukan angkanya. Jadi checksum format itu tidak bisa
+   diandalkan; yang menolong cuma pengulangan. */
+var SCAN_1D_ULANG = 2;
+var SCAN_1D_ULANG_TANPA_CEK = 3;
 
 function openScanKoli(){ openScan(true); }
 
@@ -4904,17 +4914,23 @@ function cekDigitEAN(s){
 function scanDipastikan(txt, format){
   format = String(format||'').toUpperCase();
   if(/QR|DATA_MATRIX|AZTEC|PDF/.test(format)){ state.scanBuf = null; return true; }
-  if(/^(EAN|UPC)/.test(format) && !cekDigitEAN(txt)){
+  var adaCek = /^(EAN|UPC)/.test(format);
+  if(adaCek && !cekDigitEAN(txt)){
     state.scanBuf = null;
     pesanScan('Terbaca ' + txt + ' tapi angkanya tidak sah — arahkan ulang');
     return false;
   }
+  // format tak dikenal diperlakukan seperti CODE_128: lebih baik minta sekali lagi
+  var perlu = adaCek ? SCAN_1D_ULANG : SCAN_1D_ULANG_TANPA_CEK;
   if(!state.scanBuf || state.scanBuf.txt !== txt){
     state.scanBuf = {txt:txt, n:1};
-    pesanScan('Memastikan ' + txt + ' …');
+    pesanScan('Memastikan ' + txt + ' … (1/' + perlu + ')');
     return false;
   }
-  if(++state.scanBuf.n < SCAN_1D_ULANG){ pesanScan('Memastikan ' + txt + ' …'); return false; }
+  if(++state.scanBuf.n < perlu){
+    pesanScan('Memastikan ' + txt + ' … (' + state.scanBuf.n + '/' + perlu + ')');
+    return false;
+  }
   state.scanBuf = null;
   return true;
 }
